@@ -160,15 +160,36 @@ export function buildCity(scene, rng) {
   const oceanBase = oceanGeo.attributes.position.array.slice();
   let oceanTick = 0;
 
+  // flat sea out to the horizon, so the animated patch never ends in a visible edge
+  const farGeo = new THREE.PlaneGeometry(4200, 4200);
+  farGeo.rotateX(-Math.PI / 2);
+  const farUv = farGeo.attributes.uv;
+  for (let i = 0; i < farUv.count; i += 1) farUv.setXY(i, farUv.getX(i) * (4200 / 900), farUv.getY(i) * (4200 / 900));
+  const farSea = new THREE.Mesh(farGeo, new THREE.MeshPhongMaterial({ color: '#1ab8c8', map: oceanTex, specular: '#ffe2a8', shininess: 90 }));
+  farSea.position.set(180, -1, 180);
+  root.add(farSea);
+
+  // golden sunset glitter path running out to the horizon
+  const glitterTex = TX.glitterTexture();
+  glitterTex.repeat.set(1, 44);
+  const glitterGeo = new THREE.PlaneGeometry(110, 1500).rotateX(-Math.PI / 2).rotateY(Math.PI / 2);
+  const glitter = new THREE.Mesh(glitterGeo, new THREE.MeshBasicMaterial({ map: glitterTex, color: '#ffb457', transparent: true, opacity: 0.7, depthWrite: false }));
+  glitter.position.set(980, -0.1, -30);
+  glitter.renderOrder = 2;
+  root.add(glitter);
+
   const slope = new THREE.Mesh(new THREE.PlaneGeometry(18, 540, 1, 1), mats.sand);
   slope.geometry.rotateX(-Math.PI / 2);
   [0, -1.8, 0, -1.8].forEach((y, i) => slope.geometry.attributes.position.setY(i, y));
   slope.position.set(WORLD.maxX + 9, 0, -35);
   slope.receiveShadow = true;
   root.add(slope);
-  const foam = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 540), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55, depthWrite: false }));
+  const foamTex = TX.foamTexture();
+  foamTex.repeat.set(1, 4);
+  const foam = new THREE.Mesh(new THREE.PlaneGeometry(7, 540), new THREE.MeshBasicMaterial({ map: foamTex, transparent: true, opacity: 0.9, depthWrite: false }));
   foam.rotation.x = -Math.PI / 2;
-  foam.position.set(WORLD.maxX + 13.5, -0.78, -35);
+  foam.position.set(WORLD.maxX + 9.8, -0.68, -35);
+  foam.renderOrder = 1;
   root.add(foam);
   const quay = new THREE.Mesh(new THREE.BoxGeometry(520, 3.4, 1.2), mats.concrete);
   quay.position.set(-40, -1.7, WORLD.maxZ + 0.6);
@@ -285,10 +306,15 @@ export function buildCity(scene, rng) {
       hotel(165, c.cz, 34, Math.max(26, Math.min(d, 60)), (c.j + 1) % 5, c.j % 2 === 0);
       for (let z = c.z0 + 6; z < c.z1 - 4; z += 12) palm(141, z, 1);
       const inRamp = (z) => z > -90 && z < -10;
-      for (let n = 0; n < 5; n += 1) {
-        const ux = rng.range(190, 202);
+      const clear = (uz) => !inRamp(uz) && !(Math.abs(uz - LANDMARKS.beach.z) < 10);
+      for (let n = 0; n < 9; n += 1) {
+        const ux = rng.range(190, 203);
         const uz = rng.range(c.z0 + 6, c.z1 - 6);
-        if (!inRamp(uz) && !(Math.abs(uz - LANDMARKS.beach.z) < 10)) city.umbrellas.push([ux, 0, uz, rng.range(0, 6.28), 1]);
+        if (clear(uz)) city.umbrellas.push([ux, 0.1, uz, rng.range(0, 6.28), rng.range(0.9, 1.15), rng.int(0, 5)]);
+      }
+      for (let n = 0; n < 2; n += 1) {
+        const uz = c.z0 + 12 + n * ((c.d - 24) / 1.5) + rng.range(-3, 3);
+        if (clear(uz)) city.cabanas.push([186.5, 0.2, uz, 0, 1, rng.int(0, 3)]);
       }
     } else if (c.j === 2) {
       hotel(c.cx, c.cz, c.w - 18, c.d - 24, 2, true);
@@ -305,6 +331,7 @@ export function buildCity(scene, rng) {
     }
   };
   city.umbrellas = [];
+  city.cabanas = [];
 
   // ---- harbor ----
   const containers = [];
@@ -519,9 +546,33 @@ export function buildCity(scene, rng) {
 
   const canopy = new THREE.ConeGeometry(2.4, 1.2, 10).translate(0, 3.2, 0);
   const umbrellaGeo = mergeGeos([placed(new THREE.CylinderGeometry(0.06, 0.06, 3.2, 5).translate(0, 1.6, 0), 0, 0, 0), canopy]);
-  const umbrellas = instances(umbrellaGeo, new THREE.MeshStandardMaterial({ color: '#ff7a8a', roughness: 0.7 }), city.umbrellas);
-  umbrellas.material.vertexColors = false;
+  const umbrellas = instances(umbrellaGeo, new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.7 }), city.umbrellas);
+  const beachColors = ['#ff7a8a', '#2fd0d0', '#ffd24a', '#f4f4f4', '#ff9a3a', '#b48cff'];
+  city.umbrellas.forEach((u, i) => umbrellas.setColorAt(i, new THREE.Color(beachColors[u[5]])));
   root.add(umbrellas);
+
+  // beach cabanas: timber frame with a bench, and a striped pyramid roof tinted per instance
+  const cabanaFrame = mergeGeos([
+    ...[[-1.3, -1.0], [-1.3, 1.0], [1.3, -1.0], [1.3, 1.0]].map(([x, z]) => placed(new THREE.BoxGeometry(0.14, 2.4, 0.14).translate(0, 1.2, 0), x, 0, z)),
+    placed(new THREE.BoxGeometry(0.1, 1.5, 2.1).translate(0, 0.75, 0), -1.3, 0, 0),
+    placed(new THREE.BoxGeometry(1.1, 0.12, 1.9).translate(0, 0.45, 0), -0.6, 0, 0),
+    placed(new THREE.BoxGeometry(3, 0.1, 2.5).translate(0, 0.05, 0), 0, 0, 0),
+  ]);
+  root.add(instances(cabanaFrame, new THREE.MeshStandardMaterial({ color: '#d8b98a', roughness: 0.85 }), city.cabanas));
+  const cabanaRoof = instances(new THREE.ConeGeometry(2.45, 0.95, 4).rotateY(Math.PI / 4).translate(0, 2.85, 0), new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.7 }), city.cabanas);
+  city.cabanas.forEach((u, i) => cabanaRoof.setColorAt(i, new THREE.Color(beachColors[u[5]])));
+  root.add(cabanaRoof);
+  const loungers = [];
+  for (const u of city.cabanas) for (const dz of [-3.6, 3.6]) loungers.push([u[0] + 1.6, 0.2, u[2] + dz, Math.PI / 2, 1]);
+  root.add(instances(mergeGeos([placed(new THREE.BoxGeometry(0.7, 0.12, 1.9).translate(0, 0.28, 0), 0, 0, 0), placed(new THREE.BoxGeometry(0.7, 0.12, 0.7).translate(0, 0.55, 0), 0, 0, -0.9, 0, 0.7)]), new THREE.MeshStandardMaterial({ color: '#f4efe4', roughness: 0.9 }), loungers));
+
+  // boardwalk lamps: slim poles with warm globes and a soft additive halo
+  const boardLamps = [];
+  for (let z = -264; z < 204; z += 18) if (!ROADS.z.some((r) => Math.abs(z - r) < 9)) boardLamps.push([145.4, 0.2, z, 0, 1]);
+  root.add(instances(mergeGeos([new THREE.CylinderGeometry(0.07, 0.1, 3.8, 6).translate(0, 1.9, 0), placed(new THREE.BoxGeometry(0.5, 0.07, 0.07).translate(0, 3.8, 0), -0.2, 0, 0)]), mats.metal, boardLamps));
+  const globeRows = boardLamps.map((l) => [l[0] - 0.42, 3.62, l[2], 0, 1]);
+  root.add(instances(new THREE.SphereGeometry(0.2, 10, 8), new THREE.MeshBasicMaterial({ color: '#ffe3a6' }), globeRows, false));
+  root.add(instances(new THREE.SphereGeometry(1.1, 10, 8), new THREE.MeshBasicMaterial({ color: '#ffb25a', transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false }), globeRows, false));
 
   const cm = new THREE.MeshStandardMaterial({ map: TX.containerTexture(), roughness: 0.55, metalness: 0.2 });
   const cont = instances(new THREE.BoxGeometry(12, 2.6, 2.5), cm, containers.map((c) => c.slice(0, 5)));
@@ -606,7 +657,10 @@ export function buildCity(scene, rng) {
       p.needsUpdate = true;
       oceanGeo.computeVertexNormals();
     }
-    foam.material.opacity = 0.4 + Math.sin(t * 1.6) * 0.18;
+    foamTex.offset.set(Math.sin(t * 0.9) * 0.06, t * 0.004);
+    foam.material.opacity = 0.78 + Math.sin(t * 1.6) * 0.14;
+    glitterTex.offset.y = -t * 0.04;
+    glitter.material.opacity = 0.62 + Math.sin(t * 1.3) * 0.1;
     for (const n of city.neon) n.halo.material.opacity = 0.45 + Math.sin(t * 3 + n.phase) * 0.12;
   };
   return city;

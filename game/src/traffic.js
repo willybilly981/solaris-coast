@@ -106,24 +106,26 @@ export function createTraffic(G) {
   function spawnOne() {
     const px = G.player.x;
     const pz = G.player.z;
-    const axis = rng.chance(0.5) ? 'z' : 'x';
-    const c = rng.pick(axis === 'z' ? ROADS.x : ROADS.z);
+    // the beach boulevard (last avenue) carries extra traffic
+    const boulevard = rng.chance(0.3);
+    const axis = boulevard || rng.chance(0.5) ? 'z' : 'x';
+    const c = boulevard ? ROADS.x[ROADS.x.length - 1] : rng.pick(axis === 'z' ? ROADS.x : ROADS.z);
     const sign = rng.sign();
     const along = (axis === 'z' ? pz : px) + rng.range(-120, 120);
     const x = axis === 'z' ? c : along;
     const z = axis === 'z' ? along : c;
     if (limit(axis, 1, along) || limit(axis, -1, along)) return;
-    if (Math.hypot(x - px, z - pz) < 55) return;
+    if (Math.hypot(x - px, z - pz) < 45) return;
     const crossing = (axis === 'z' ? ROADS.z : ROADS.x).some((r) => Math.abs(r - along) < 12);
     if (crossing) return;
-    if (G.vehicles.list.some((o) => Math.hypot(o.x - x, o.z - z) < 14)) return;
+    if (G.vehicles.list.some((o) => Math.hypot(o.x - x, o.z - z) < 12)) return;
     T.spawnOnRoad(rng.pick(TRAFFIC_SPECS), axis, c, along, sign, rng.pick(CAR_COLORS));
   }
 
   T.step = (dt) => {
     let count = 0;
     for (const v of G.vehicles.list) if (v.owner === 'traffic' && v.ai) count += 1;
-    if (count < 24 && rng.chance(0.5)) spawnOne();
+    if (count < 34 && rng.chance(0.6)) spawnOne();
     for (const v of [...G.vehicles.list]) {
       if (v.owner !== 'traffic') continue;
       const far = Math.hypot(v.x - G.player.x, v.z - G.player.z);

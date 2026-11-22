@@ -2,7 +2,16 @@
 import * as THREE from 'three';
 import { DISTRICTS, ROADS, WANTED_TIERS, WORLD, districtAt } from './config.js';
 import { animateHumanoid, createHumanoid } from './pedestrians.js';
-import { beamTexture } from './textures.js';
+import { spotTexture } from './textures.js';
+
+const beamMaterial = (alpha, power) => new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  uniforms: { uColor: { value: new THREE.Color('#ffe9bd') }, uAlpha: { value: alpha }, uPow: { value: power } },
+  vertexShader: `varying vec3 vN; varying vec3 vV; varying float vT;
+    void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); vT = uv.y; gl_Position = projectionMatrix * mv; }`,
+  fragmentShader: `uniform vec3 uColor; uniform float uAlpha; uniform float uPow; varying vec3 vN; varying vec3 vV; varying float vT;
+    void main(){ float f = pow(abs(dot(normalize(vN), normalize(vV))), uPow); gl_FragColor = vec4(uColor, uAlpha * f * (0.4 + 0.6 * vT)); }`,
+});
 
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const DISPATCH = [
@@ -174,7 +183,7 @@ export function createPolice(G) {
 
   P.spawnOfficer = (x, z, type) => {
     const tac = type === 'tactical';
-    const mesh = createHumanoid({ shirt: tac ? '#1c2230' : '#2c4a8a', pants: tac ? '#161a24' : '#1b2a52', skin: rng.pick(['#e9b88f', '#b57a54']), hair: '#111', hat: tac ? '#10131b' : '#1b2a52', gun: true });
+    const mesh = createHumanoid({ shirt: tac ? '#1c2230' : '#2c4a8a', pants: tac ? '#161a24' : '#1b2a52', skin: rng.pick(['#e9b88f', '#b57a54']), hair: '#111', hat: tac ? '#10131b' : '#1b2a52', gun: true, kind: tac ? 'swat' : 'cop' });
     G.scene.add(mesh);
     const o = { mesh, x, z, hp: tac ? 110 : 55, type, dir: 0, cd: rng.range(0.4, 1.2), alert: 8, dead: -1, strafe: rng.sign(), t: 0, hold: 0 };
     P.officers.push(o);
@@ -256,13 +265,16 @@ export function createPolice(G) {
     const spot = new THREE.SpotLight('#fff0cf', 5200, 150, 0.2, 0.6, 2);
     spot.target = new THREE.Object3D();
     G.scene.add(spot, spot.target);
-    const beam = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.6, 11, 1, 28, 1, true),
-      new THREE.MeshBasicMaterial({ map: beamTexture(), color: '#fff2cc', transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
-    );
+    // two additive shells, wide haze plus a brighter core, both fading toward their silhouette so no hard cone edge shows
+    const beam = new THREE.Group();
     beam.frustumCulled = false;
+    for (const [top, bottom, alpha, power] of [[0.8, 9, 0.2, 1.3], [0.35, 4.2, 0.42, 2.2]]) {
+      const shell = new THREE.Mesh(new THREE.CylinderGeometry(top, bottom, 1, 32, 1, true), beamMaterial(alpha, power));
+      shell.frustumCulled = false;
+      beam.add(shell);
+    }
     G.scene.add(beam);
-    const spotDisc = new THREE.Mesh(new THREE.CircleGeometry(10, 32), new THREE.MeshBasicMaterial({ color: '#fff4d2', transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false }));
+    const spotDisc = new THREE.Mesh(new THREE.PlaneGeometry(26, 26), new THREE.MeshBasicMaterial({ map: spotTexture(), color: '#ffe6b0', transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }));
     spotDisc.rotation.x = -Math.PI / 2;
     G.scene.add(spotDisc);
     return { g, rotor, tail, spot, beam, spotDisc, a: 0, aim: new THREE.Vector3(G.player.x, 0, G.player.z), pos: new THREE.Vector3(G.player.x + 14, 34, G.player.z + 8) };

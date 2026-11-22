@@ -325,3 +325,105 @@ export function deckTexture() {
   g.fillRect(0, 126, 256, 4);
   return toTexture(c);
 }
+
+/** Soft dark disc that grounds a character on the pavement. */
+export function shadowDiscTexture() {
+  const c = canvas(64, 64);
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(0,0,0,0.62)');
+  grad.addColorStop(0.55, 'rgba(0,0,0,0.3)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  return toTexture(c, { repeat: false });
+}
+
+/** Radial falloff with a flat bright core: the ground spot of the searchlight. */
+export function spotTexture() {
+  const c = canvas(128, 128);
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, 'rgba(255,255,255,0.9)');
+  grad.addColorStop(0.3, 'rgba(255,255,255,0.5)');
+  grad.addColorStop(0.7, 'rgba(255,255,255,0.14)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 128, 128);
+  return toTexture(c, { repeat: false });
+}
+
+/** Surf foam: u across the shore (sea on the right), v along it; ragged bright edge over a soft wash. */
+export function foamTexture() {
+  const c = canvas(128, 512);
+  const g = c.getContext('2d');
+  const rnd = mulberry32(33);
+  for (let y = 0; y < 512; y += 1) {
+    const edge = 74 + 11 * Math.sin((y / 512) * Math.PI * 8) + 6 * Math.sin((y / 512) * Math.PI * 22 + 1) + rnd() * 3;
+    const grad = g.createLinearGradient(edge - 56, 0, edge + 8, 0);
+    grad.addColorStop(0, 'rgba(255,255,255,0)');
+    grad.addColorStop(0.7, 'rgba(255,255,255,0.35)');
+    grad.addColorStop(0.92, 'rgba(255,255,255,0.95)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, y, 128, 1);
+  }
+  return toTexture(c);
+}
+
+/** Sunset glitter on water: u across the path, v along it; golden dashes that thin out toward the edges. */
+export function glitterTexture() {
+  const c = canvas(128, 512);
+  const g = c.getContext('2d');
+  const rnd = mulberry32(44);
+  const wash = g.createLinearGradient(0, 0, 128, 0);
+  wash.addColorStop(0, 'rgba(255,190,90,0)');
+  wash.addColorStop(0.5, 'rgba(255,190,90,0.28)');
+  wash.addColorStop(1, 'rgba(255,190,90,0)');
+  g.fillStyle = wash;
+  g.fillRect(0, 0, 128, 512);
+  for (let i = 0; i < 900; i += 1) {
+    const x = 64 + (rnd() + rnd() + rnd() - 1.5) * 58;
+    const y = rnd() * 512;
+    const a = 0.25 + rnd() * 0.7;
+    g.fillStyle = `rgba(255,${225 + Math.floor(rnd() * 30)},${150 + Math.floor(rnd() * 70)},${a})`;
+    g.fillRect(x, y, 3 + rnd() * 12, 1 + rnd() * 1.6);
+  }
+  return toTexture(c);
+}
+
+/** SCMPD door livery on white: blue stripe, star badge and unit mark. */
+export function policeLiveryTexture() {
+  const c = canvas(256, 96);
+  const g = c.getContext('2d');
+  g.fillStyle = '#f4f6fa';
+  g.fillRect(0, 0, 256, 96);
+  g.fillStyle = '#16213a';
+  g.fillRect(0, 70, 256, 26);
+  g.fillStyle = '#2a6bff';
+  g.fillRect(0, 62, 256, 7);
+  g.fillStyle = '#0c0d12';
+  g.font = 'bold 34px "Arial Black", Impact, sans-serif';
+  g.textAlign = 'left';
+  g.textBaseline = 'middle';
+  g.fillText('SCMPD', 86, 28);
+  g.font = 'bold 15px Arial, sans-serif';
+  g.fillStyle = '#2a4a9a';
+  g.fillText('INTERCEPTOR  07', 86, 52);
+  g.fillStyle = '#f2c230';
+  g.strokeStyle = '#0c0d12';
+  g.lineWidth = 3;
+  g.beginPath();
+  for (let i = 0; i < 10; i += 1) {
+    const r = i % 2 ? 11 : 26;
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const x = 44 + Math.cos(a) * r;
+    const y = 34 + Math.sin(a) * r;
+    if (i) g.lineTo(x, y);
+    else g.moveTo(x, y);
+  }
+  g.closePath();
+  g.fill();
+  g.stroke();
+  return toTexture(c, { repeat: false });
+}

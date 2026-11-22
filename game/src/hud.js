@@ -60,7 +60,7 @@ export function createHud(G) {
   const H = {};
   const staticMap = buildStaticMap();
 
-  const topRight = el('div', 'topRight', root);
+  const topRight = el('div', 'topRight', root, 'glass');
   const cash = el('div', 'cash', topRight);
   const stars = el('div', 'stars', topRight);
   const starEls = Array.from({ length: 5 }, () => el('div', null, stars, 'star'));
@@ -69,7 +69,7 @@ export function createHud(G) {
   const respect = el('div', 'respect', topRight);
   const respectBar = el('div', 'respectBar', respect);
   const respectText = el('div', 'respectText', topRight);
-  const weapon = el('div', 'weapon', topRight, 'panel');
+  const weapon = el('div', 'weapon', topRight);
 
   const topLeft = el('div', 'topLeft', root);
   const mission = el('div', 'mission', topLeft, 'panel');
@@ -85,11 +85,15 @@ export function createHud(G) {
   const mini = el('canvas', 'minimap', mapWrap);
   mini.width = 210;
   mini.height = 210;
-  const bars = el('div', 'bars', bottomLeft);
-  const hpWrap = el('div', null, bars, 'bar');
-  const hpBar = el('i', 'hpBar', hpWrap);
-  const armWrap = el('div', null, bars, 'bar');
-  const armBar = el('i', 'armBar', armWrap);
+  const bars = el('div', 'bars', bottomLeft, 'glass');
+  const barRow = (label, barId) => {
+    const row = el('div', null, bars, 'barRow');
+    el('span', null, row, 'barLabel').textContent = label;
+    const track = el('div', null, row, 'bar');
+    return [el('i', barId, track), el('span', null, row, 'barVal')];
+  };
+  const [hpBar, hpVal] = barRow('HP', 'hpBar');
+  const [armBar, armVal] = barRow('ARMOR', 'armBar');
 
   const bottomRight = el('div', 'bottomRight', root);
   const vehName = el('div', 'vehName', bottomRight);
@@ -111,8 +115,8 @@ export function createHud(G) {
   const flash = el('div', 'hitFlash', root);
 
   const wheel = el('canvas', 'wheel', root);
-  wheel.width = 380;
-  wheel.height = 380;
+  wheel.width = 440;
+  wheel.height = 440;
   const full = el('div', 'fullmap', root);
   const fullCanvas = el('canvas', null, full);
   fullCanvas.width = MAP_SIZE;
@@ -165,13 +169,18 @@ export function createHud(G) {
     bannerT = text ? 3.2 : 0;
   };
 
+  const slotLevel = (s) => Math.max(0, ...Object.values((s.activities && s.activities.respect) || {}).map((v) => RESPECT_LEVELS.filter((r) => v >= r).length - 1));
   H.refreshSlots = (selected) => {
-    G.save.slots().forEach((s, i) => {
-      slotEls[i].innerHTML = `SLOT ${i + 1}<small>${s ? `${s.when}  $${s.cash}  M${s.missions}/8` : 'empty'}</small>`;
-      slotEls[i].classList.toggle('sel', i === selected);
+    const slots = G.save.slots();
+    const any = slots.some(Boolean);
+    slots.forEach((s, i) => {
+      const info = s ? `Mission ${Math.min(s.missions + 1, 8)}/8 - $${s.cash.toLocaleString('en-US')} - Respect Lv ${slotLevel(s)}` : 'empty';
+      slotEls[i].innerHTML = `SLOT ${i + 1}<small>${info}</small>`;
+      slotEls[i].classList.toggle('sel', !any && i === selected);
+      slotEls[i].classList.toggle('cur', any && i === selected);
     });
-    const any = G.save.slots().some(Boolean);
     btnContinue.style.opacity = any ? '1' : '0.45';
+    btnContinue.classList.toggle('sel', any);
   };
 
   function drawBlip(g, x, y, color, r) {
@@ -319,47 +328,97 @@ export function createHud(G) {
     g.restore();
   }
 
+  // weapon silhouettes as [x, y, w, h, radius] boxes around the origin, one list per WEAPONS entry
+  const ICONS = [
+    [[-14, -8, 24, 16, 6], [8, -5, 9, 10, 3]],
+    [[-20, -8, 36, 9, 2], [-6, 0, 11, 18, 2], [16, -6, 7, 5, 1]],
+    [[-24, -6, 44, 10, 2], [-8, 4, 8, 16, 2], [4, 3, 6, 9, 2], [-31, -5, 8, 8, 1], [20, -4, 11, 5, 1]],
+    [[-26, -3, 52, 6, 2], [-4, 3, 18, 6, 3], [-31, -6, 14, 12, 3]],
+    [[-26, -7, 48, 13, 4], [-12, 5, 9, 13, 2], [22, -4, 11, 5, 2]],
+  ];
+
   function drawWheel() {
     const g = wheel.getContext('2d');
-    g.clearRect(0, 0, 380, 380);
+    const S = 440;
+    const C = S / 2;
+    const R1 = 206;
+    const R0 = 84;
+    const seg = (Math.PI * 2) / WEAPONS.length;
     const cur = G.player.weapon;
-    for (let i = 0; i < WEAPONS.length; i += 1) {
-      const a0 = -Math.PI / 2 + (i - 0.5) * (Math.PI * 2 / 5) + 0.03;
-      const a1 = a0 + Math.PI * 2 / 5 - 0.06;
+    g.clearRect(0, 0, S, S);
+    const ring = (i) => {
+      const a0 = -Math.PI / 2 + (i - 0.5) * seg;
       g.beginPath();
-      g.arc(190, 190, 176, a0, a1);
-      g.arc(190, 190, 74, a1, a0, true);
+      g.arc(C, C, R1, a0, a0 + seg);
+      g.arc(C, C, R0, a0 + seg, a0, true);
       g.closePath();
-      g.fillStyle = i === cur ? 'rgba(255,150,50,.78)' : 'rgba(8,16,34,.8)';
+    };
+    for (let i = 0; i < WEAPONS.length; i += 1) {
+      ring(i);
+      g.fillStyle = i === cur ? 'rgba(10,44,60,.93)' : 'rgba(8,13,24,.86)';
       g.fill();
-      g.strokeStyle = i === cur ? '#ffd27a' : 'rgba(140,210,255,.55)';
-      g.lineWidth = 2;
+    }
+    g.strokeStyle = 'rgba(150,205,235,.4)';
+    g.lineWidth = 2;
+    for (let i = 0; i < WEAPONS.length; i += 1) {
+      const a = -Math.PI / 2 + (i - 0.5) * seg;
+      g.beginPath();
+      g.moveTo(C + Math.cos(a) * R0, C + Math.sin(a) * R0);
+      g.lineTo(C + Math.cos(a) * R1, C + Math.sin(a) * R1);
       g.stroke();
-      const am = (a0 + a1) / 2;
-      const cx = 190 + Math.cos(am) * 126;
-      const cy = 190 + Math.sin(am) * 126;
-      const w = WEAPONS[i];
-      const st = G.player.weapons[i];
-      g.textAlign = 'center';
-      g.fillStyle = '#fff';
-      g.font = 'bold 15px Arial';
-      g.fillText(`${i + 1}  ${w.name}`, cx, cy - 4);
-      g.font = 'bold 18px Arial';
-      g.fillStyle = i === cur ? '#fff6d0' : '#9fe0ff';
-      g.fillText(i === 0 ? 'MELEE' : `${st.mag} / ${st.reserve}`, cx, cy + 20);
     }
     g.beginPath();
-    g.arc(190, 190, 62, 0, 6.283);
-    g.fillStyle = 'rgba(6,12,26,.7)';
-    g.fill();
-    g.strokeStyle = 'rgba(140,210,255,.7)';
+    g.arc(C, C, R1, 0, 6.283);
     g.stroke();
-    g.fillStyle = '#fff';
-    g.font = 'bold 14px Arial';
+    ring(cur);
+    g.save();
+    g.shadowColor = '#27e3ff';
+    g.shadowBlur = 22;
+    g.strokeStyle = '#4ff0ff';
+    g.lineWidth = 4;
+    g.stroke();
+    g.restore();
     g.textAlign = 'center';
-    g.fillText('WEAPONS', 190, 186);
-    g.fillStyle = '#ffd27a';
-    g.fillText(WEAPONS[cur].name.toUpperCase(), 190, 206);
+    for (let i = 0; i < WEAPONS.length; i += 1) {
+      const am = -Math.PI / 2 + i * seg;
+      const cx = C + Math.cos(am) * 146;
+      const cy = C + Math.sin(am) * 146;
+      const on = i === cur;
+      const w = WEAPONS[i];
+      const st = G.player.weapons[i];
+      g.save();
+      g.translate(cx, cy - 28);
+      g.fillStyle = on ? '#8ff6ff' : '#d4e4f0';
+      if (on) {
+        g.shadowColor = '#27e3ff';
+        g.shadowBlur = 14;
+      }
+      for (const [x, y, bw, bh, r] of ICONS[i]) {
+        g.beginPath();
+        g.roundRect(x, y, bw, bh, r);
+        g.fill();
+      }
+      g.restore();
+      g.fillStyle = '#ffffff';
+      g.font = 'bold 15px "Segoe UI", Arial, sans-serif';
+      g.fillText(`${i + 1}  ${w.name}`, cx, cy + 10);
+      g.font = 'bold 19px "Segoe UI", Arial, sans-serif';
+      g.fillStyle = on ? '#8ff6ff' : '#9fd2ea';
+      g.fillText(i === 0 ? 'MELEE' : `${st.mag} / ${st.reserve}`, cx, cy + 34);
+    }
+    g.beginPath();
+    g.arc(C, C, R0 - 12, 0, 6.283);
+    g.fillStyle = 'rgba(6,11,20,.9)';
+    g.fill();
+    g.strokeStyle = 'rgba(150,205,235,.5)';
+    g.lineWidth = 2;
+    g.stroke();
+    g.fillStyle = '#cfe3f0';
+    g.font = 'bold 13px "Segoe UI", Arial, sans-serif';
+    g.fillText('WEAPONS', C, C - 8);
+    g.fillStyle = '#4ff0ff';
+    g.font = 'bold 15px "Segoe UI", Arial, sans-serif';
+    g.fillText(WEAPONS[cur].name.toUpperCase(), C, C + 14);
   }
 
   H.update = (dt, t, mode) => {
@@ -413,7 +472,8 @@ export function createHud(G) {
     drawMinimap(t);
     hpBar.style.width = `${Math.max(0, pl.hp)}%`;
     armBar.style.width = `${pl.armor}%`;
-    armWrap.style.display = pl.armor > 0 ? '' : 'none';
+    set('hpv', hpVal, String(Math.max(0, Math.ceil(pl.hp))));
+    set('arv', armVal, String(Math.ceil(pl.armor)));
     flash.style.boxShadow = pl.hurtT > 0 ? 'inset 0 0 120px 30px rgba(255,30,60,.55)' : 'inset 0 0 120px 30px rgba(255,30,60,0)';
     const v = pl.vehicle;
     bottomRight.style.display = v ? '' : 'none';

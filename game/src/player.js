@@ -4,7 +4,7 @@ import { newWeaponState } from './combat.js';
 import { animateHumanoid, createHumanoid } from './pedestrians.js';
 
 export function createPlayer(G) {
-  const mesh = createHumanoid({ shirt: '#ff7a3a', pants: '#1d2a44', skin: '#d9a77b', hair: '#1a100a', gun: true });
+  const mesh = createHumanoid({ shirt: '#ff7a3a', pants: '#1d2a44', skin: '#d9a77b', hair: '#1a100a', gun: true, kind: 'hero' });
   G.scene.add(mesh);
   const P = {
     mesh, x: LANDMARKS.start.x, z: LANDMARKS.start.z, y: 0.2, heading: Math.PI, camYaw: Math.PI, camPitch: 0.28, lookT: 0,

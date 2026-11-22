@@ -112,6 +112,27 @@ export function createFx(G, glow) {
     soft, hot,
     smoke: (x, y, z, s = 1, dark = false) => part(soft, x + rnd(0.5), y, z + rnd(0.5), rnd(0.8), 1.6 + Math.random(), rnd(0.8), 1.7 + Math.random() * 0.8, 1.2 * s, 4.2 * s, dark ? '#1a1816' : '#9a9690', dark ? 0.7 : 0.45, 0.2, 0.3),
     fire: (x, y, z) => part(hot, x, y, z, rnd(1.2), 2.4 + Math.random() * 2, rnd(1.2), 0.5 + Math.random() * 0.3, 1.5, 0.3, Math.random() < 0.5 ? '#ff7a1a' : '#ffc23a', 0.95, 0, 0.5),
+    // Burning wreck: layered flames (red base, orange body, yellow core), billowing dark smoke, flying embers.
+    blaze: (x, y, z, heading, len, k = 1) => {
+      const sx = Math.sin(heading);
+      const sz = Math.cos(heading);
+      const at = () => {
+        const u = rnd(len * 0.8);
+        const w = rnd(1.3);
+        return [x + sx * u + sz * w, z + sz * u - sx * w];
+      };
+      let [px, pz] = at();
+      part(hot, px, y + 0.5, pz, rnd(0.8), 1.8 + Math.random() * 2, rnd(0.8), 0.6 + Math.random() * 0.4, 2.4 * k, 0.5, '#ff3a0a', 0.55, 0, 0.5);
+      [px, pz] = at();
+      part(hot, px, y + 0.7, pz, rnd(0.6), 2.6 + Math.random() * 2.6, rnd(0.6), 0.5 + Math.random() * 0.35, 1.8 * k, 0.35, Math.random() < 0.5 ? '#ff7a1a' : '#ff9d2a', 0.9, 0, 0.5);
+      if (Math.random() < 0.7) {
+        [px, pz] = at();
+        part(hot, px, y + 0.9, pz, rnd(0.3), 3.4 + Math.random() * 2, rnd(0.3), 0.35 + Math.random() * 0.25, 1.1 * k, 0.2, Math.random() < 0.5 ? '#ffd75a' : '#fff2b0', 0.95, 0, 0.4);
+      }
+      if (Math.random() < 0.55) part(soft, x + rnd(1.6), y + 1.6, z + rnd(1.6), 0.7 + rnd(0.6), 2.6 + Math.random() * 1.6, rnd(0.8), 2.6 + Math.random() * 1.6, 1.4 * k, 6.5 * k, Math.random() < 0.5 ? '#1c1a19' : '#4a4743', 0.62, 0.15, 0.35);
+      if (Math.random() < 0.2) part(hot, x + rnd(1.2), y + 1, z + rnd(1.6), rnd(5), 4 + Math.random() * 6, rnd(5), 0.7 + Math.random() * 0.6, 0.28, 0.08, '#ffb040', 1, -9, 0.3);
+      if (Math.random() < 0.25) part(hot, x, y + 1.2, z, 0, 0.3, 0, 0.5, 6 * k, 6 * k, '#ff6a1a', 0.18);
+    },
     spark: (x, y, z, n = 6) => {
       for (let i = 0; i < n; i += 1) part(hot, x, y, z, rnd(9), 2 + Math.random() * 5, rnd(9), 0.25 + Math.random() * 0.3, 0.35, 0.1, '#ffd470', 1, -16, 0.5);
     },
@@ -339,7 +360,7 @@ export function createCombat(G) {
   };
 
   C.spawnEnemy = (x, z, o = {}) => {
-    const mesh = createHumanoid({ shirt: '#3a1f52', pants: '#16131c', skin: rng.pick(['#e9b88f', '#b57a54', '#8a5a3a']), hair: '#0c0c10', hat: '#2a1740', gun: true });
+    const mesh = createHumanoid({ shirt: '#3a1f52', pants: '#16131c', skin: rng.pick(['#e9b88f', '#b57a54', '#8a5a3a']), hair: '#0c0c10', hat: '#2a1740', gun: true, kind: 'thug' });
     G.scene.add(mesh);
     const e = { mesh, x, z, hp: o.hp || 60, dir: rng.range(0, 6.28), cd: rng.range(0.4, 1.2), alert: o.alert || 0, dead: -1, strafe: rng.sign(), t: 0, mission: !!o.mission };
     C.enemies.push(e);

@@ -1,64 +1,171 @@
 // Humanoid meshes plus the sidewalk crowd: walking, panic on gunfire and crashes, cash drops.
 import * as THREE from 'three';
 import { ROADS, WORLD } from './config.js';
+import { mergeGeos, placed, tint } from './geometry.js';
+import { shadowDiscTexture } from './textures.js';
 
+const BODY_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.05 });
+const GUN_MAT = new THREE.MeshStandardMaterial({ color: '#16181d', roughness: 0.45, metalness: 0.6 });
+const SHADOW_GEO = new THREE.PlaneGeometry(1.7, 1.7);
+const shadowMat = new THREE.MeshBasicMaterial({ map: shadowDiscTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
 const cache = new Map();
-function mat(color) {
-  if (!cache.has(color)) cache.set(color, new THREE.MeshStandardMaterial({ color, roughness: 0.75, metalness: 0.05 }));
-  return cache.get(color);
-}
-const BOX = new THREE.BoxGeometry(1, 1, 1);
-const HEAD = new THREE.SphereGeometry(0.15, 10, 8);
+const flatShadow = new THREE.Matrix4();
+const flatTurn = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
 
-function limb(w, h, d, color, y) {
-  const pivot = new THREE.Group();
-  const m = new THREE.Mesh(BOX, mat(color));
-  m.scale.set(w, h, d);
-  m.position.y = -h / 2;
-  m.castShadow = true;
-  pivot.add(m);
-  pivot.position.y = y;
-  return pivot;
+const shade = (hex, k) => new THREE.Color(hex).multiplyScalar(k);
+const box = (w, h, d, x, y, z, c, rx = 0, rz = 0) => tint(placed(new THREE.BoxGeometry(w, h, d), x, y, z, 0, rx, rz), c);
+const ball = (r, sx, sy, sz, x, y, z, c) => tint(placed(new THREE.SphereGeometry(r, 10, 8).scale(sx, sy, sz), x, y, z), c);
+
+/** Head, hair or headgear, and the collared torso: one merged mesh per outfit. */
+function bodyGeo(o) {
+  const { kind, shirt, skin, hair, hat } = o;
+  const dark = shade(shirt, 0.6);
+  const parts = [
+    box(0.46, 0.3, 0.25, 0, 1.31, 0, shirt),
+    box(0.38, 0.34, 0.22, 0, 1.0, 0, shirt),
+    box(0.42, 0.06, 0.24, 0, 0.88, 0, '#1a1a1e'),
+    box(0.06, 0.05, 0.02, 0, 0.88, 0.125, '#c9ccd2'),
+    tint(placed(new THREE.CylinderGeometry(0.055, 0.065, 0.1, 8), 0, 1.5, 0), skin),
+    box(0.1, 0.05, 0.12, -0.075, 1.47, 0.04, dark, 0, 0.55),
+    box(0.1, 0.05, 0.12, 0.075, 1.47, 0.04, dark, 0, -0.55),
+    ball(0.13, 0.95, 1.08, 1, 0, 1.64, 0, skin),
+    ball(0.03, 1, 1, 1, -0.135, 1.63, 0, skin),
+    ball(0.03, 1, 1, 1, 0.135, 1.63, 0, skin),
+    box(0.03, 0.05, 0.05, 0, 1.62, 0.13, shade(skin, 0.9)),
+  ];
+  if (kind !== 'swat') {
+    parts.push(ball(0.016, 1, 1, 1, -0.05, 1.655, 0.12, '#14100e'), ball(0.016, 1, 1, 1, 0.05, 1.655, 0.12, '#14100e'));
+  }
+  if (kind === 'civ') {
+    parts.push(ball(0.14, 1, 0.72, 1.06, 0, 1.69, -0.015, hair), box(0.2, 0.05, 0.05, 0, 1.73, 0.1, hair));
+  } else if (kind === 'hero') {
+    parts.push(
+      ball(0.14, 1, 0.74, 1.06, 0, 1.69, -0.015, hair),
+      box(0.16, 0.07, 0.16, 0, 1.78, 0.06, hair, -0.4),
+      box(0.27, 0.05, 0.03, 0, 1.65, 0.125, '#0a0c10'),
+      box(0.4, 0.03, 0.26, 0, 1.43, 0, '#f2f4f8'),
+      box(0.02, 0.5, 0.01, 0, 1.17, 0.13, '#f2f4f8'),
+      box(0.1, 0.4, 0.05, -0.15, 1.2, 0.12, shade(shirt, 0.75), 0, 0.12),
+      box(0.1, 0.4, 0.05, 0.15, 1.2, 0.12, shade(shirt, 0.75), 0, -0.12),
+    );
+  } else if (kind === 'cop') {
+    parts.push(
+      tint(placed(new THREE.CylinderGeometry(0.15, 0.155, 0.1, 12), 0, 1.745, 0), hat),
+      box(0.24, 0.025, 0.12, 0, 1.69, 0.15, '#0c0e14'),
+      box(0.04, 0.04, 0.01, 0, 1.75, 0.155, '#e8c24a'),
+      box(0.5, 0.4, 0.28, 0, 1.2, 0, shade(hat, 0.7)),
+      box(0.06, 0.06, 0.01, 0.1, 1.32, 0.145, '#e8c24a'),
+      box(0.05, 0.1, 0.04, -0.12, 1.4, 0.15, '#0c0e14'),
+    );
+  } else if (kind === 'swat') {
+    parts.push(
+      ball(0.17, 1, 0.86, 1.1, 0, 1.69, -0.01, hat),
+      box(0.25, 0.07, 0.06, 0, 1.655, 0.14, '#0a2236'),
+      box(0.2, 0.08, 0.05, 0, 1.55, 0.11, '#0b0d12'),
+      box(0.54, 0.46, 0.32, 0, 1.2, 0, '#0d1017'),
+      box(0.14, 0.12, 0.07, -0.13, 1.1, 0.18, '#171b25'),
+      box(0.14, 0.12, 0.07, 0.13, 1.1, 0.18, '#171b25'),
+      ball(0.09, 1, 0.8, 1, -0.3, 1.43, 0, '#0d1017'),
+      ball(0.09, 1, 0.8, 1, 0.3, 1.43, 0, '#0d1017'),
+    );
+  } else {
+    parts.push(
+      ball(0.145, 1, 0.8, 1.06, 0, 1.7, -0.01, hat),
+      box(0.3, 0.04, 0.27, 0, 1.63, -0.005, hat),
+      box(0.2, 0.08, 0.05, 0, 1.55, 0.11, '#0c0a10'),
+      ball(0.2, 1, 0.55, 0.8, 0, 1.46, -0.1, hat),
+    );
+  }
+  return mergeGeos(parts);
 }
 
-export function createHumanoid({ shirt = '#e85d75', pants = '#2b3a55', skin = '#d9a77b', hair = '#2a1a10', hat = null, gun = false } = {}) {
+function limbGeos(o) {
+  const long = o.kind !== 'civ' && o.kind !== 'hero';
+  const sleeve = o.kind === 'swat' ? '#0d1017' : o.shirt;
+  const glove = o.kind === 'swat' ? '#0b0d12' : o.skin;
+  const bare = long ? sleeve : o.skin;
+  const boot = o.kind === 'civ' || o.kind === 'hero' ? '#2a2420' : '#0e0f13';
+  return {
+    upper: mergeGeos([box(0.12, 0.3, 0.13, 0, -0.15, 0, sleeve), ball(0.075, 1, 1, 1, 0, 0, 0, sleeve)]),
+    fore: mergeGeos([box(0.1, 0.28, 0.11, 0, -0.14, 0, bare), ball(0.052, 1, 1, 1, 0, -0.3, 0, glove)]),
+    thigh: mergeGeos([box(0.17, 0.46, 0.19, 0, -0.23, 0, o.pants)]),
+    shin: mergeGeos([box(0.15, 0.4, 0.17, 0, -0.2, 0, o.pants), box(0.16, 0.08, 0.29, 0, -0.42, 0.05, boot)]),
+  };
+}
+
+// built along +z, then turned so the barrel points down the forearm (-y)
+const WEAPON_GEO = mergeGeos([
+  box(0.06, 0.1, 0.32, 0, 0, 0.12, '#1a1d24'),
+  box(0.035, 0.035, 0.3, 0, 0.015, 0.42, '#0c0e12'),
+  box(0.05, 0.13, 0.07, 0, -0.1, 0.04, '#14161c', 0.2),
+  box(0.05, 0.14, 0.06, 0, -0.1, 0.2, '#101216'),
+  box(0.05, 0.09, 0.16, 0, -0.01, -0.12, '#14161c'),
+]).rotateX(Math.PI / 2);
+
+export function createHumanoid({ shirt = '#e85d75', pants = '#2b3a55', skin = '#d9a77b', hair = '#2a1a10', hat = null, gun = false, kind = 'civ' } = {}) {
+  const o = { kind, shirt, pants, skin, hair, hat: hat || hair };
+  const key = [kind, shirt, pants, skin, hair, hat].join('|');
+  if (!cache.has(key)) cache.set(key, { body: bodyGeo(o), ...limbGeos(o) });
+  const geo = cache.get(key);
   const g = new THREE.Group();
-  const torso = new THREE.Mesh(BOX, mat(shirt));
-  torso.scale.set(0.46, 0.64, 0.26);
-  torso.position.y = 1.12;
-  torso.castShadow = true;
-  const head = new THREE.Mesh(HEAD, mat(skin));
-  head.position.y = 1.62;
-  head.castShadow = true;
-  const cap = new THREE.Mesh(HEAD, mat(hat || hair));
-  cap.scale.set(1.05, hat ? 0.7 : 0.8, 1.05);
-  cap.position.set(0, hat ? 1.72 : 1.68, -0.02);
-  const legL = limb(0.18, 0.8, 0.2, pants, 0.8);
-  const legR = limb(0.18, 0.8, 0.2, pants, 0.8);
-  legL.position.x = -0.12;
-  legR.position.x = 0.12;
-  const armL = limb(0.14, 0.62, 0.16, shirt, 1.4);
-  const armR = limb(0.14, 0.62, 0.16, shirt, 1.4);
-  armL.position.x = -0.31;
-  armR.position.x = 0.31;
-  const weapon = new THREE.Mesh(BOX, mat('#16181d'));
-  weapon.scale.set(0.07, 0.1, 0.5);
-  weapon.position.set(0, -0.6, 0.22);
+  const mesh = (geometry) => {
+    const m = new THREE.Mesh(geometry, BODY_MAT);
+    m.castShadow = true;
+    return m;
+  };
+  const joint = (upperGeo, lowerGeo, x, y, drop) => {
+    const top = new THREE.Group();
+    top.position.set(x, y, 0);
+    const low = new THREE.Group();
+    low.position.y = drop;
+    top.add(mesh(upperGeo), low);
+    low.add(mesh(lowerGeo));
+    g.add(top);
+    return [top, low];
+  };
+  const [legL, shinL] = joint(geo.thigh, geo.shin, -0.1, 0.9, -0.46);
+  const [legR, shinR] = joint(geo.thigh, geo.shin, 0.1, 0.9, -0.46);
+  const [armL, foreL] = joint(geo.upper, geo.fore, -0.29, 1.42, -0.3);
+  const [armR, foreR] = joint(geo.upper, geo.fore, 0.29, 1.42, -0.3);
+  const weapon = new THREE.Mesh(WEAPON_GEO, GUN_MAT);
+  weapon.position.set(0, -0.3, 0.02);
+  weapon.castShadow = true;
   weapon.visible = gun;
-  armR.add(weapon);
-  g.add(torso, head, cap, legL, legR, armL, armR);
-  g.userData = { legL, legR, armL, armR, weapon, phase: Math.random() * 6 };
+  foreR.add(weapon);
+  const shadow = new THREE.Mesh(SHADOW_GEO, shadowMat);
+  shadow.renderOrder = 1;
+  // stays flat on the ground in world space, even when the body topples
+  shadow.updateMatrixWorld = function flat() {
+    flatShadow.makeTranslation(this.parent.position.x, 0.235, this.parent.position.z);
+    this.matrixWorld.multiplyMatrices(flatShadow, flatTurn);
+  };
+  g.add(mesh(geo.body), shadow);
+  g.userData = { legL, legR, shinL, shinR, armL, armR, foreL, foreR, weapon, phase: Math.random() * 6 };
   return g;
 }
 
-/** Swing limbs by walking speed; aiming raises the weapon arm. */
+/** Stride with knee and elbow bend; aiming raises both arms into a two-handed hold. */
 export function animateHumanoid(h, speed, t, aiming) {
   const u = h.userData;
-  const k = Math.min(1, speed / 3) * Math.sin(t * Math.min(12, 4 + speed * 1.6) + u.phase);
-  u.legL.rotation.x = k * 0.9;
-  u.legR.rotation.x = -k * 0.9;
-  u.armL.rotation.x = -k * 0.8;
-  u.armR.rotation.x = aiming ? -1.45 : k * 0.8;
+  const amp = Math.min(1, speed / 3);
+  const ph = t * Math.min(12, 4 + speed * 1.6) + u.phase;
+  const s = Math.sin(ph) * amp;
+  const c = Math.cos(ph) * amp;
+  u.legL.rotation.x = s * 0.85;
+  u.legR.rotation.x = -s * 0.85;
+  u.shinL.rotation.x = Math.max(0, -c) * 1.05;
+  u.shinR.rotation.x = Math.max(0, c) * 1.05;
+  if (aiming) {
+    u.armR.rotation.set(-1.42, 0, -0.04);
+    u.foreR.rotation.x = -0.12;
+    u.armL.rotation.set(-1.25, 0, 0.4);
+    u.foreL.rotation.x = -0.35;
+    return;
+  }
+  u.armL.rotation.set(-s * 0.7, 0, 0.05);
+  u.armR.rotation.set(s * 0.7, 0, -0.05);
+  u.foreL.rotation.x = -0.18 - Math.max(0, s) * 0.5;
+  u.foreR.rotation.x = -0.18 - Math.max(0, -s) * 0.5;
 }
 
 const SHIRTS = ['#e85d75', '#4aa8ff', '#f2c94c', '#6bd68a', '#c58bff', '#ff8f4a', '#f4f4f4', '#2dc7c7'];

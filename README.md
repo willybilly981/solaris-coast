@@ -10,7 +10,7 @@ SOLARIS COAST is an original 3D open-world crime game set in Bahia Solaris, a su
 - Six vehicles with drift, handbrake and nitro driving, five weapons, carjacking and drive-by shooting.
 - A five-star heat system: patrol cars, interceptors, roadblocks and tactical units, the CONDOR-1 helicopter with a searchlight, and a Bastion APC blockade.
 - Eight story missions with radio dialogue, plus a street race, stunt jumps, garage upgrades, three save slots and per-district respect.
-- Procedural textures and audio (three radio stations); no assets are downloaded. three.js 0.187.0 (MIT) is vendored under `game/vendor` (comment links stripped, one `createElementNS` call simplified) and loaded through an import map, so the game runs offline.
+- Procedural textures and audio (three radio stations); no assets are downloaded. three.js 0.187.0 (MIT) is vendored as `game/vendor/three.module.min.js` (bundled and minified from three.js 0.187.0, MIT) and loaded through an import map, so the game runs offline.
 
 Controls: WASD move or drive, Shift sprint or nitro, F enter, hijack or exit, Space handbrake or fire on foot, mouse aim and fire (click the game to look), arrow keys camera, Q or 1-5 weapon wheel, R radio, E garage or safehouse, M map, Esc pause. Query parameters `?seed=N` and `?shot=cover|combat|harbor|title` fix the world and stage the screenshot scenes.
 

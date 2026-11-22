@@ -23,7 +23,7 @@ export function placed(geo, x, y, z, ry = 0, rx = 0, rz = 0) {
   return g;
 }
 
-/** Concatenate geometries (position, normal, uv) into one non-indexed geometry. */
+/** Concatenate geometries (position, normal, uv, optional color) into one non-indexed geometry. */
 export function mergeGeos(list) {
   const parts = list.map((g) => (g.index ? g.toNonIndexed() : g));
   let count = 0;
@@ -31,19 +31,32 @@ export function mergeGeos(list) {
   const pos = new Float32Array(count * 3);
   const nor = new Float32Array(count * 3);
   const uv = new Float32Array(count * 2);
+  const col = parts.some((g) => g.attributes.color) ? new Float32Array(count * 3).fill(1) : null;
   let at = 0;
   for (const g of parts) {
     pos.set(g.attributes.position.array, at * 3);
     nor.set(g.attributes.normal.array, at * 3);
     if (g.attributes.uv) uv.set(g.attributes.uv.array, at * 2);
+    if (g.attributes.color) col.set(g.attributes.color.array, at * 3);
     at += g.attributes.position.count;
   }
   const out = new THREE.BufferGeometry();
   out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   out.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  if (col) out.setAttribute('color', new THREE.BufferAttribute(col, 3));
   out.computeBoundingSphere();
   return out;
+}
+
+/** Paint every vertex of geo in one colour (for merged multi-colour meshes). */
+export function tint(geo, hex) {
+  const c = new THREE.Color(hex);
+  const n = geo.attributes.position.count;
+  const a = new Float32Array(n * 3);
+  for (let i = 0; i < n; i += 1) a.set([c.r, c.g, c.b], i * 3);
+  geo.setAttribute('color', new THREE.BufferAttribute(a, 3));
+  return geo;
 }
 
 /** World-space UVs for axis-aligned boxes: one texture repeat per tu x tv metres. */

@@ -93,7 +93,7 @@ function cover(G) {
   hero.input.steer = -0.6;
   hero.steer = -0.3;
   G.hud.toast('');
-  aim(G, [130, 2.9, -12], [131.5, 7.2, -60], 46);
+  aim(G, [129.2, 2.9, -6], [131.5, 5.6, -52], 54);
 }
 
 function combat(G) {
@@ -148,7 +148,7 @@ function combat(G) {
       G.combat.shoot(p.x - 0.1, 1.4, p.z - 0.9, Math.PI + (k - n / 2) * 0.012, { pellets: 1, spread: 0.01, range: 60, dmg: 0, color: '#ffd36a', id: 'smg' }, 'player', p);
     }
   };
-  run(G, 14, (i) => {
+  run(G, 40, (i) => {
     clearTraffic(G, -20, -70, 90);
     p.x = -17;
     p.z = -62.5;
@@ -157,7 +157,7 @@ function combat(G) {
       e.x = GM[k][0];
       e.z = GM[k][1];
     });
-    if (i === 13) fire(4);
+    if (i === 39) fire(4);
   });
   p.heading = Math.PI;
   p.mesh.userData.armR.rotation.x = -1.45;
@@ -215,6 +215,9 @@ function harbor(G) {
 }
 
 function title(G) {
+  // staged campaign for the menu preview only; the real save slots are never written
+  const preview = { when: '2026-11-22 20:41', cash: 28450, missions: 4, activities: { respect: { mirador: 380, crown: 1050, harbor: 90, palma: 160 }, stuntBest: 36 }, ammo: [] };
+  G.save.slots = () => [preview, null, null];
   run(G, 120);
   G.titleCamera(G.time());
 }
