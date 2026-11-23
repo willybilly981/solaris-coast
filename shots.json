@@ -1,6 +1,6 @@
 [
   { "name": "1-cover-chase.jpg", "query": "?shot=cover&seed=1" },
   { "name": "2-onfoot-combat.jpg", "query": "?shot=combat&seed=1" },
-  { "name": "3-harbor-heist.jpg", "query": "?shot=harbor&seed=1" },
+  { "name": "3-world-atlas.jpg", "query": "?shot=atlas&seed=1" },
   { "name": "4-title-city.jpg", "query": "?shot=title&seed=1" }
 ]

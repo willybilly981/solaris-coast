@@ -1,4 +1,5 @@
 // Three save slots in localStorage; falls back to memory when storage is blocked.
+import { districtAt } from './config.js';
 
 const KEY = 'solaris-coast.slot';
 const memory = {};
@@ -34,10 +35,16 @@ export function createSave(G) {
     when: new Date().toISOString().slice(0, 16).replace('T', ' '),
     cash: G.player.cash,
     missions: G.missions.done,
+    where: districtAt(G.player.x, G.player.z),
     activities: G.activities.state(),
+    progress: G.progress.state(),
     ammo: G.player.weapons.map((w) => [w.mag, w.reserve]),
   });
   S.autosave = () => write(S.slot, S.snapshot());
+  S.saveTo = (i) => {
+    S.slot = i;
+    S.autosave();
+  };
   S.load = (i) => {
     const d = read(i);
     if (!d) return false;
@@ -45,6 +52,7 @@ export function createSave(G) {
     G.player.cash = d.cash;
     G.missions.reset(d.missions);
     G.activities.load(d.activities);
+    G.progress.load(d.progress);
     (d.ammo || []).forEach((a, k) => {
       if (G.player.weapons[k] && Array.isArray(a) && Number.isFinite(a[0]) && Number.isFinite(a[1])) [G.player.weapons[k].mag, G.player.weapons[k].reserve] = a;
     });

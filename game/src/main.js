@@ -1,24 +1,27 @@
 // Boot and the one loop: renderer, golden-hour lighting, follow camera, and a fixed 1/60 s simulation.
-// ?seed=N fixes the random world; ?shot=cover|combat|harbor|title (start|play|end are aliases) stages
+// ?seed=N fixes the random world; ?shot=cover|combat|atlas|title (start|play|map are aliases) stages
 // that scene instead of the loop, renders it twice and sets window.__shotReady for a screenshot.
 import * as THREE from 'three';
-import { LANDMARKS, ROADS, STEP } from './config.js';
-import { createRandom } from './random.js';
-import { glowTexture } from './textures.js';
-import { buildCity } from './city.js';
+import { LANDMARKS, ROADS, STEP, VEHICLE_SPAWNS } from './config.js';
+import { createCrewState, crewKeys, tickCrew } from './crew.js';
+import { createProgress } from './progression.js';
+import { createAtlas } from './atlas.js';
+import { createMissions } from './missions.js';
+import { createPolice } from './police.js';
 import { createVehicles, setGlowTexture } from './vehicles.js';
-import { createTraffic } from './traffic.js';
-import { createPeds } from './pedestrians.js';
 import { createFx, createCombat } from './combat.js';
 import { createPlayer } from './player.js';
-import { createPolice } from './police.js';
-import { createMissions } from './missions.js';
 import { createActivities } from './activities.js';
 import { createHud } from './hud.js';
+import { buildCity } from './city.js';
+import { createPeds } from './pedestrians.js';
+import { createTraffic } from './traffic.js';
+import { glowTexture } from './textures.js';
 import { createAudio } from './audio.js';
 import { createSave } from './save.js';
 import { createInput } from './input.js';
 import { stageShot } from './shots.js';
+import { createRandom } from './random.js';
 
 const SUN = new THREE.Vector3(-0.75, 0.3, 0.55).normalize();
 const MAX_FRAME = 0.25;
@@ -38,13 +41,13 @@ try {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 1.18;
 } catch {
   renderer = null;
 }
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog('#ffb585', 150, 760);
+scene.fog = new THREE.Fog('#ffc9a0', 170, 820);
 const camera = new THREE.PerspectiveCamera(62, 16 / 9, 0.3, 2000);
 const rng = createRandom(seed);
 
@@ -55,12 +58,26 @@ const sky = new THREE.Mesh(
     uniforms: { uSun: { value: SUN } },
     vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `uniform vec3 uSun; varying vec3 vDir;
+      float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float vnoise(vec2 p){ vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y); }
+      float fbm(vec2 p){ float v = 0.0; float a = 0.5; for (int i = 0; i < 5; i++) { v += a * vnoise(p); p *= 2.03; a *= 0.5; } return v; }
       void main(){ vec3 d = normalize(vDir); float h = d.y;
-        vec3 horizon = vec3(1.0,0.62,0.42); vec3 gold = vec3(1.0,0.80,0.52); vec3 mid = vec3(0.36,0.80,0.82); vec3 zen = vec3(0.06,0.44,0.70);
+        vec3 horizon = vec3(1.0,0.70,0.50); vec3 gold = vec3(1.0,0.84,0.58); vec3 mid = vec3(0.42,0.82,0.88); vec3 zen = vec3(0.10,0.50,0.78);
         vec3 c = mix(horizon, gold, smoothstep(-0.02,0.07,h)); c = mix(c, mid, smoothstep(0.05,0.40,h)); c = mix(c, zen, smoothstep(0.32,0.95,h));
-        if (h < 0.0) c = mix(horizon, vec3(0.6,0.38,0.30), smoothstep(0.0,-0.4,h));
+        if (h < 0.0) c = mix(horizon, vec3(0.62,0.42,0.34), smoothstep(0.0,-0.4,h));
+        c = mix(c, vec3(1.0,0.80,0.62), exp(-abs(h) * 9.0) * 0.45);
         float s = max(dot(d, normalize(uSun)), 0.0);
         c += vec3(1.0,0.60,0.28)*pow(s,5.0)*0.5 + vec3(1.0,0.84,0.55)*pow(s,50.0)*0.9 + vec3(1.0,0.97,0.86)*smoothstep(0.9988,0.9996,s)*3.0;
+        if (h > 0.0) {
+          vec2 uv = d.xz / (h + 0.14);
+          float lo = smoothstep(0.50, 0.78, fbm(uv * 0.9 + vec2(3.1, 1.7)));
+          float hi = smoothstep(0.55, 0.85, fbm(uv * 2.1 + vec2(9.4, 4.2))) * 0.6;
+          float cloud = max(lo, hi) * smoothstep(0.02, 0.16, h) * (1.0 - 0.5 * smoothstep(0.55, 1.0, h));
+          vec3 lit = mix(vec3(1.0,0.60,0.52), vec3(1.0,0.92,0.78), pow(s, 0.6));
+          vec3 under = mix(vec3(0.62,0.40,0.52), lit, 0.55 + 0.45 * fbm(uv * 1.4));
+          c = mix(c, mix(under, lit, 0.55), cloud * 0.85);
+        }
         gl_FragColor = vec4(c, 1.0); }`,
   }),
 );
@@ -68,7 +85,7 @@ sky.renderOrder = -10;
 sky.frustumCulled = false;
 scene.add(sky);
 
-const sun = new THREE.DirectionalLight('#ffbe80', 3.4);
+const sun = new THREE.DirectionalLight('#ffcf96', 3.6);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 const sc = sun.shadow.camera;
@@ -81,14 +98,14 @@ sc.far = 420;
 sun.shadow.bias = -0.0005;
 sun.shadow.normalBias = 0.06;
 scene.add(sun, sun.target);
-scene.add(new THREE.HemisphereLight('#7fd4e8', '#e9a272', 1.15));
+scene.add(new THREE.HemisphereLight('#89c2ff', '#f0b385', 1.35));
 
 try {
   const pm = new THREE.PMREMGenerator(renderer);
   const envScene = new THREE.Scene();
   envScene.add(new THREE.Mesh(sky.geometry, sky.material));
   scene.environment = pm.fromScene(envScene, 0.02).texture;
-  scene.environmentIntensity = 0.7;
+  scene.environmentIntensity = 0.85;
   pm.dispose();
 } catch {
   scene.environment = null;
@@ -96,7 +113,7 @@ try {
 
 const glowTex = glowTexture();
 setGlowTexture(glowTex);
-const G = { scene, camera, renderer, rng, glowTex, camYaw: Math.PI, mapOpen: false, shakeMag: 0, sun, SUN };
+const G = { scene, camera, renderer, rng, glowTex, camYaw: Math.PI, waypoint: null, shakeMag: 0, sun, SUN };
 G.shake = (m) => {
   G.shakeMag = Math.max(G.shakeMag, m);
 };
@@ -109,9 +126,12 @@ G.combat = createCombat(G);
 G.police = createPolice(G);
 G.player = createPlayer(G);
 G.traffic = createTraffic(G);
+G.crew = createCrewState();
+G.progress = createProgress(G);
 G.missions = createMissions(G);
 G.activities = createActivities(G);
 G.save = createSave(G);
+G.atlas = createAtlas(G);
 G.hud = createHud(G);
 G.blast = (x, z, r, dmg, src) => G.combat.blast(x, z, r, dmg, src);
 G.alarm = (x, z, r) => {
@@ -130,8 +150,11 @@ const sim = (dt, input, live) => {
   t += dt;
   G.player.step(dt, t, input);
   if (live) {
+    crewKeys(G, input);
+    tickCrew(G, dt);
     G.activities.step(dt, t, input);
     G.missions.step_(dt, t);
+    G.progress.step(dt, t);
   }
   G.vehicles.step(dt, t);
   G.traffic.step(dt);
@@ -157,10 +180,12 @@ function seedWorld() {
     const v = G.vehicles.spawn(specs[k % 4], c + 5.9 * (k % 2 ? 1 : -1), z, k % 2 ? 0 : Math.PI, { owner: 'parked', color: rng.pick(['#1f8fff', '#e8eef5', '#ff6fa8', '#38d6a0', '#d93a3a']) });
     v.sleep = true;
   }
+  for (const s of VEHICLE_SPAWNS) G.vehicles.spawn(s.spec, s.x, s.z, s.heading, { owner: 'parked' }).sleep = true;
   G.vehicles.step(STEP, 0);
 }
 
 function layout() {
+  if (!renderer) return;
   const w = window.innerWidth;
   const h = window.innerHeight;
   renderer.setSize(w, h, false);
@@ -168,7 +193,7 @@ function layout() {
   camera.updateProjectionMatrix();
   G.fx.setScale(h * renderer.getPixelRatio(), camera.fov);
 }
-window.addEventListener('resize', layout);
+if (renderer) window.addEventListener('resize', layout);
 
 const vFwd = new THREE.Vector3();
 const vWant = new THREE.Vector3();
@@ -288,9 +313,12 @@ function runGame() {
       G.player.reset();
       G.missions.reset(0);
       G.activities.load({ respect: { mirador: 0, crown: 0, harbor: 0, palma: 0 }, stuntBest: 0 });
+      G.progress.load(null);
     } else if (!G.save.load(slot)) {
       G.save.slot = slot;
     }
+    Object.assign(G.crew, createCrewState());
+    G.waypoint = null;
     G.player.x = LANDMARKS.start.x;
     G.player.z = LANDMARKS.start.z - 18;
     G.player.camYaw = 0;
@@ -312,6 +340,19 @@ function runGame() {
     begin(n < 0 ? 0 : n, n < 0);
   };
   G.hud.btnNew.onclick = () => begin(selected, true);
+  // the title previews the newest career, so the atlas shows real saved progress
+  const openAtlas = (tab) => {
+    if (document.pointerLockElement) document.exitPointerLock();
+    if (mode === 'title' && tab === 'MAP' && newest() >= 0) G.save.load(newest());
+    G.atlas.show(tab);
+  };
+  G.hud.btnAtlas.onclick = () => openAtlas('MAP');
+  G.hud.btnControls.onclick = () => openAtlas('CONTROLS');
+  G.atlas.canSave = () => mode !== 'title';
+  G.atlas.onLoad = (i) => {
+    G.atlas.hide();
+    begin(i, false);
+  };
   G.hud.slotEls.forEach((b, i) => {
     b.onclick = () => {
       selected = i;
@@ -331,13 +372,20 @@ function runGame() {
     requestAnimationFrame(frame);
     const dt = Math.min((now - last) / 1000, MAX_FRAME);
     last = now;
-    if (mode === 'title') {
+    if (G.atlas.open) {
+      if (input.take('KeyM') || input.take('Escape')) G.atlas.hide();
+      for (let i = 1; i <= 5; i += 1) if (input.take(`Digit${i}`)) G.atlas.key(`Digit${i}`);
+      input.clearEdges();
+      G.atlas.draw(now / 1000);
+      if (mode === 'title') titleCamera(t);
+    } else if (mode === 'title') {
       for (let i = 1; i <= 3; i += 1) {
         if (input.take(`Digit${i}`)) {
           selected = i - 1;
           G.hud.refreshSlots(selected);
         }
       }
+      if (input.take('KeyM')) openAtlas('MAP');
       if (input.take('Enter') || input.take('Space')) {
         const n = newest();
         begin(n < 0 ? selected : n, n < 0);
@@ -351,12 +399,11 @@ function runGame() {
       titleCamera(t);
     } else if (mode === 'play') {
       if (input.take('Escape')) {
-        if (G.mapOpen) G.mapOpen = false;
-        else if (G.activities.garage.open) G.activities.garage.open = false;
+        if (G.activities.garage.open) G.activities.garage.open = false;
         else mode = 'paused';
         if (document.pointerLockElement) document.exitPointerLock();
       }
-      if (input.take('KeyM')) G.mapOpen = !G.mapOpen;
+      if (input.take('KeyM')) openAtlas('MAP');
       if (input.take('KeyR')) G.hud.toast(G.audio.toggleRadio());
       acc += dt;
       while (acc >= STEP) {
@@ -371,6 +418,7 @@ function runGame() {
       G.audio.siren(near ? 1 : 0);
     } else if (mode === 'paused') {
       if (input.take('Escape') || input.take('Enter')) mode = 'play';
+      if (input.take('KeyM')) openAtlas('MAP');
       input.clearEdges();
       acc = 0;
     }

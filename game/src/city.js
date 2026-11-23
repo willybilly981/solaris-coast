@@ -9,12 +9,16 @@ const GRID = 40;
 const COLS = [-280, ...ROADS.x, 215];
 const ROWS = [-280, ...ROADS.z, 215];
 const SIGN_TEXT = ['SOLARIS', 'AURUM', 'VELA BANK', 'NOVA', 'ORCHID', 'KAIRO', 'ZENITH', 'CROWN', 'HALCYON', 'LUMEN'];
-const PASTELS = ['#f6a9c4', '#9fe6cf', '#ffc79e', '#c8b8ff', '#8fdcea'];
+// coral, seafoam, cream, terracotta, ocean teal
+const PASTELS = ['#ff8f78', '#8fe8c8', '#fff1cf', '#e8906a', '#58c9c6'];
 
 function makeMaterials() {
   const std = (o) => new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.02, ...o });
+  const shopTex = TX.storefrontTexture();
   const m = {
     road: std({ map: TX.roadTexture(), roughness: 0.9 }),
+    roadStreet: std({ map: TX.roadTexture(true), roughness: 0.9 }),
+    shop: std({ map: shopTex, emissiveMap: shopTex, emissive: 0xffffff, emissiveIntensity: 0.65 }),
     cross: std({ map: TX.intersectionTexture(), roughness: 0.9 }),
     walk_crown: std({ map: TX.paverTexture('#a3acb6') }),
     walk_harbor: std({ map: TX.paverTexture('#8f8c86') }),
@@ -24,7 +28,7 @@ function makeMaterials() {
     lawn: std({ map: TX.lawnTexture(), roughness: 1 }),
     lot: std({ map: TX.asphaltTexture(), roughness: 0.9 }),
     deck: std({ map: TX.deckTexture(), roughness: 0.8 }),
-    roof: std({ color: '#5b606b' }),
+    roof: std({ color: '#7d838f' }),
     concrete: std({ color: '#b2b4b8' }),
     metal: std({ color: '#8e949e', metalness: 0.5, roughness: 0.4 }),
     crane: std({ color: '#e5472a', metalness: 0.3, roughness: 0.5 }),
@@ -102,8 +106,10 @@ export function buildCity(scene, rng, glowTex) {
   city.glow = glowTex || TX.glowTexture();
 
   // ---- roads ----
-  const roadPos = [];
-  const roadUV = [];
+  const avePos = [];
+  const aveUV = [];
+  const streetPos = [];
+  const streetUV = [];
   const crossPos = [];
   const crossUV = [];
   const quad = (pos, uv, x0, z0, x1, z1, uvf) => {
@@ -118,14 +124,14 @@ export function buildCity(scene, rng, glowTex) {
     let z0 = WORLD.minZ;
     for (const r of [...ROADS.z, Infinity]) {
       const z1 = r === Infinity ? WORLD.maxZ : r - h;
-      if (z1 > z0) quad(roadPos, roadUV, a - h, z0, a + h, z1, (x, z) => [(x - (a - h)) / 14, z / 28]);
+      if (z1 > z0) quad(avePos, aveUV, a - h, z0, a + h, z1, (x, z) => [(x - (a - h)) / 14, z / 28]);
       z0 = r + h;
     }
   }
   for (const r of ROADS.z) {
     let x0 = WORLD.minX;
     for (const a of ROADS.x) {
-      if (a - h > x0) quad(roadPos, roadUV, x0, r - h, a - h, r + h, (x, z) => [(z - (r - h)) / 14, x / 28]);
+      if (a - h > x0) quad(streetPos, streetUV, x0, r - h, a - h, r + h, (x, z) => [(z - (r - h)) / 14, x / 28]);
       x0 = a + h;
     }
     for (const a of ROADS.x) quad(crossPos, crossUV, a - h, r - h, a + h, r + h, (x, z) => [(x - (a - h)) / 14, (z - (r - h)) / 14]);
@@ -139,7 +145,8 @@ export function buildCity(scene, rng, glowTex) {
     mesh.receiveShadow = true;
     root.add(mesh);
   };
-  roadMesh(roadPos, roadUV, mats.road);
+  roadMesh(avePos, aveUV, mats.road);
+  roadMesh(streetPos, streetUV, mats.roadStreet);
   roadMesh(crossPos, crossUV, mats.cross);
 
   // ---- ground, sea, outskirts ----
@@ -238,7 +245,15 @@ export function buildCity(scene, rng, glowTex) {
       box(trim, cx - w / 2 - 0.25, ht * 0.15, cz + d / 2 + 0.25, 0.45, ht * 0.8, 0.45);
     }
   };
+  /** Lit shop windows and awnings on all four ground-floor faces. */
+  const shopfront = (cx, cz, w, d) => {
+    for (const s of [-1, 1]) {
+      box('shop', cx, 0.2, cz + s * (d / 2 + 0.07), w - 2, 3.6, 0.14, [32, 3.6]);
+      box('shop', cx + s * (w / 2 + 0.07), 0.2, cz, 0.14, 3.6, d - 2, [32, 3.6]);
+    }
+  };
   const midrise = (cx, cz, w, d, ht, k) => {
+    shopfront(cx, cz, w, d);
     box(`deco${k}`, cx, 0.2, cz, w, ht, d, [16, 16]);
     box('roof', cx, ht + 0.2, cz, w + 0.6, 0.7, d + 0.6);
     box(rng.chance(0.5) ? 'trimMagenta' : 'trimCyan', cx, ht - 0.8, cz, w + 0.3, 0.35, d + 0.3);
@@ -288,6 +303,7 @@ export function buildCity(scene, rng, glowTex) {
     const t1 = rng.range(14, 22);
     const t2 = rng.range(8, 14);
     const t3 = rng.range(6, 10);
+    shopfront(cx, cz, w, d);
     box(`deco${k}`, cx, 0.2, cz, w, t1, d, [16, 16]);
     box(`deco${k}`, cx, t1 + 0.2, cz, w * 0.78, t2, d * 0.78, [16, 16]);
     box(`deco${k}`, cx, t1 + t2 + 0.2, cz, w * 0.5, t3, d * 0.5, [16, 16]);

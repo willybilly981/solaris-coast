@@ -32,7 +32,16 @@ export const LANDMARKS = {
   crownPlaza: { x: 20, z: -65 },
   raceStart: { x: 130, z: 100 },
   beach: { x: 195, z: 40 },
+  hospital: { x: 40, z: -65 },
 };
+
+/** Showroom cars parked at boot so the atlas V markers point at real vehicles. */
+export const VEHICLE_SPAWNS = [
+  { spec: 'aurelia', x: 160, z: -20, heading: Math.PI },
+  { spec: 'vipera', x: 0, z: -65, heading: Math.PI / 2 },
+  { spec: 'solara', x: 100, z: 100, heading: 0 },
+  { spec: 'cargo', x: -140, z: -38, heading: Math.PI },
+];
 
 /** Ramps: centre, width, length, height; dir is the heading a car drives up the slope. */
 export const RAMPS = [
@@ -54,11 +63,11 @@ export const TRAFFIC_SPECS = ['solara', 'vipera', 'aurelia', 'cargo'];
 export const CAR_COLORS = ['#1f8fff', '#e8eef5', '#2b2f3a', '#ff6fa8', '#38d6a0', '#ffb347', '#a63cff', '#d93a3a', '#f2e24b'];
 
 export const WEAPONS = [
-  { id: 'fists', name: 'Fists', mag: 0, reserve: 0, dmg: 20, rate: 0.45, range: 2.1, spread: 0, pellets: 1, auto: false, color: '#ffffff' },
-  { id: 'pistol', name: '9mm Pistol', mag: 12, reserve: 96, dmg: 24, rate: 0.26, range: 60, spread: 0.02, pellets: 1, auto: false, color: '#ffe9a0' },
-  { id: 'smg', name: 'Tactical SMG', mag: 30, reserve: 240, dmg: 13, rate: 0.075, range: 55, spread: 0.05, pellets: 1, auto: true, color: '#ffd36a' },
-  { id: 'shotgun', name: 'Pump Shotgun', mag: 6, reserve: 36, dmg: 11, rate: 0.85, range: 28, spread: 0.13, pellets: 8, auto: false, color: '#ffb066' },
-  { id: 'pulse', name: 'Pulse Rifle', mag: 40, reserve: 200, dmg: 22, rate: 0.11, range: 80, spread: 0.015, pellets: 1, auto: true, color: '#52f0ff' },
+  { id: 'fists', name: 'Fists', short: 'FIST', rank: 1, mag: 0, reserve: 0, dmg: 20, rate: 0.45, range: 2.1, spread: 0, pellets: 1, auto: false, color: '#ffffff' },
+  { id: 'pistol', name: '9mm Pistol', short: '9MM', rank: 1, mag: 12, reserve: 96, dmg: 24, rate: 0.26, range: 60, spread: 0.02, pellets: 1, auto: false, color: '#ffe9a0' },
+  { id: 'smg', name: 'Tactical SMG', short: 'SMG', rank: 1, mag: 30, reserve: 240, dmg: 13, rate: 0.075, range: 55, spread: 0.05, pellets: 1, auto: true, color: '#ffd36a' },
+  { id: 'shotgun', name: 'Pump Shotgun', short: 'SHOTGUN', rank: 2, mag: 6, reserve: 36, dmg: 11, rate: 0.85, range: 28, spread: 0.13, pellets: 8, auto: false, color: '#ffb066' },
+  { id: 'pulse', name: 'Pulse Rifle', short: 'RIFLE', rank: 3, mag: 40, reserve: 200, dmg: 22, rate: 0.11, range: 80, spread: 0.015, pellets: 1, auto: true, color: '#52f0ff' },
 ];
 
 /** Heat needed for each star, and what each tier sends. */
@@ -74,96 +83,98 @@ export const WANTED_TIERS = [
 export const RESPECT_LEVELS = [0, 100, 300, 600, 1000, 1600];
 
 /**
- * Mission steps: goto {x,z,r}, getcar {spec,x,z}, kill {n,x,z}, evade, destroy {x,z}.
- * Lines are [speaker, text] and play when the step begins (intro on mission start).
+ * Mission steps: goto {x,z,r}, getcar {spec,x,z}, kill {n,x,z,ally}, evade, destroy {x,z}.
+ * Lines are [speakerId, text] and play when the step begins (intro on mission start).
+ * par is the gold-grade time in seconds; short is the HUD objective label.
  */
 export const MISSIONS = [
   {
-    id: 'm1', title: 'Sunrise Boulevard', district: 'mirador', cash: 800, respect: 60,
+    id: 'm1', title: 'Sunrise Boulevard', district: 'mirador', cash: 800, respect: 60, par: 90,
     start: { x: 141, z: 22 },
-    intro: [['Elena', 'Mateo, the Syndicate moved our shipment. Meet my contact on the beach.'], ['Mateo', 'On my way, sis. Keep the line open.']],
+    intro: [['elena', 'Kai, the Syndicate moved our shipment. Meet my contact on the beach.'], ['kai', 'On my way, Elena. Keep the line open.']],
     steps: [
-      { type: 'goto', text: 'Meet the contact on the beach', x: 195, z: 40, r: 5, line: ['Elena', 'Contact is by the lifeguard tower. Walk, do not run.'] },
-      { type: 'getcar', text: 'Take the Solara GT', spec: 'solara', x: 136, z: 52, line: ['Elena', 'Keys are in that Solara GT. Take it.'] },
-      { type: 'goto', text: 'Drive to the crew garage, Palma Heights', x: -160, z: -38, r: 6, line: ['Elena', 'Garage is on the west side. Tune it up.'] },
+      { type: 'goto', text: 'Meet the contact on the beach', short: 'MEET CONTACT', x: 195, z: 40, r: 5, line: ['elena', 'Contact is by the lifeguard tower. Walk, do not run.'] },
+      { type: 'getcar', text: 'Take the Solara GT', short: 'TAKE SOLARA', spec: 'solara', x: 136, z: 52, line: ['elena', 'Keys are in that Solara GT. Take it.'] },
+      { type: 'goto', text: 'Drive to the crew garage, Palma Heights', short: 'REACH GARAGE', x: -160, z: -38, r: 6, line: ['elena', 'Garage is on the west side. Tune it up.'] },
     ],
-    outro: [['Elena', 'Clean run. The crew garage is ours now.']],
+    outro: [['elena', 'Clean run. The crew garage is ours now.']],
   },
   {
-    id: 'm2', title: 'Glass Ceiling', district: 'crown', cash: 1200, respect: 80,
+    id: 'm2', title: 'Glass Ceiling', district: 'crown', cash: 1200, respect: 80, par: 80,
     start: { x: 20, z: -45 },
-    intro: [['Elena', 'Obsidian runners are meeting in the Crown plaza. Thin them out.']],
+    intro: [['elena', 'Obsidian runners are meeting in the Crown plaza. Thin them out.']],
     steps: [
-      { type: 'goto', text: 'Reach Crown Financial plaza', x: 60, z: -65, r: 6, line: ['Elena', 'I have eyes on four of them.'] },
-      { type: 'kill', text: 'Eliminate Obsidian runners', n: 4, x: 60, z: -90, line: ['Mateo', 'Contact. Engaging.'] },
+      { type: 'goto', text: 'Reach Crown Financial plaza', short: 'REACH PLAZA', x: 60, z: -65, r: 6, line: ['elena', 'I have eyes on four of them. Coming down to cover you.'] },
+      { type: 'kill', text: 'Eliminate Obsidian runners', short: 'CLEAR RUNNERS', n: 4, x: 60, z: -90, ally: true, line: ['kai', 'Contact. Engaging.'] },
     ],
-    outro: [['Elena', 'Runners down. Their ledger just lit up my screen.']],
+    outro: [['elena', 'Runners down. Their ledger just lit up my screen.']],
   },
   {
-    id: 'm3', title: 'Fresh Paint', district: 'crown', cash: 1000, respect: 70,
+    id: 'm3', title: 'Fresh Paint', district: 'crown', cash: 1000, respect: 70, par: 90,
     start: { x: -20, z: -120 },
-    intro: [['Elena', 'Obsidian owns a Vipera V8 parked on Avenue 3. Borrow it.']],
+    intro: [['elena', 'Obsidian owns a Vipera V8 parked on Avenue 3. Borrow it.']],
     steps: [
-      { type: 'getcar', text: 'Steal the Vipera V8', spec: 'vipera', x: -20, z: -150, line: ['Mateo', 'Nice ride for a criminal.'] },
-      { type: 'goto', text: 'Deliver it to the crew garage', x: -160, z: -38, r: 6, line: ['Elena', 'Garage, quick, before the plates ping.'] },
+      { type: 'getcar', text: 'Steal the Vipera V8', short: 'STEAL VIPERA', spec: 'vipera', x: -20, z: -150, line: ['kai', 'Nice ride for a criminal.'] },
+      { type: 'goto', text: 'Deliver it to the crew garage', short: 'REACH GARAGE', x: -160, z: -38, r: 6, line: ['sofia', 'Garage, quick, before the plates ping. I can swap them.'] },
     ],
-    outro: [['Elena', 'The garage crew will repaint it before sundown.']],
+    outro: [['sofia', 'The garage crew will repaint it before sundown.']],
   },
   {
-    id: 'm4', title: 'Hot Cargo', district: 'harbor', cash: 1800, respect: 90,
+    id: 'm4', title: 'Hot Cargo', district: 'harbor', cash: 1800, respect: 90, par: 110,
     start: { x: 60, z: 78 },
-    intro: [['Elena', 'Syndicate armour left a Cargo Mule at the depot. Take it to the hotel bay.']],
+    intro: [['elena', 'Syndicate armour left a Cargo Mule at the depot. Take it to the hotel bay.']],
     steps: [
-      { type: 'getcar', text: 'Take the Cargo Mule', spec: 'cargo', x: 60, z: 105, heat: 30, line: ['Elena', 'Police scanner just chirped. You are hot.'] },
-      { type: 'goto', text: 'Deliver the cargo to the hotel bay', x: 130, z: -150, r: 8, line: ['Elena', 'Straight up the boulevard, Mateo.'] },
+      { type: 'getcar', text: 'Take the Cargo Mule', short: 'TAKE MULE', spec: 'cargo', x: 60, z: 105, heat: 30, line: ['elena', 'Police scanner just chirped. You are hot.'] },
+      { type: 'goto', text: 'Deliver the cargo to the hotel bay', short: 'DELIVER CARGO', x: 130, z: -150, r: 8, line: ['marco', 'Hotel bay is ready. I will patch the hull when you arrive.'] },
     ],
-    outro: [['Elena', 'Cargo delivered. Lose the heat, then rest.']],
+    outro: [['elena', 'Cargo delivered. Lose the heat, then rest.']],
   },
   {
-    id: 'm5', title: 'Dead Drop', district: 'crown', cash: 1500, respect: 80,
+    id: 'm5', title: 'Dead Drop', district: 'crown', cash: 1500, respect: 80, par: 100,
     start: { x: -20, z: -45 },
-    intro: [['Elena', 'Three drop points across Crown. Pick the data up in order.']],
+    intro: [['elena', 'Three drop points across Crown. Pick the data up in order.']],
     steps: [
-      { type: 'goto', text: 'Drop 1: Avenue 3 junction', x: -20, z: -110, r: 6, line: ['Elena', 'First drop is live.'] },
-      { type: 'goto', text: 'Drop 2: Overpass underpass', x: 60, z: -110, r: 6, line: ['Elena', 'Under the highway now.'] },
-      { type: 'goto', text: 'Drop 3: Crown plaza', x: 60, z: -20, r: 6, line: ['Elena', 'Last one. I am uploading.'] },
+      { type: 'goto', text: 'Drop 1: Avenue 3 junction', short: 'DROP 1', x: -20, z: -110, r: 6, line: ['elena', 'First drop is live.'] },
+      { type: 'goto', text: 'Drop 2: Overpass underpass', short: 'DROP 2', x: 60, z: -110, r: 6, line: ['elena', 'Under the highway now.'] },
+      { type: 'goto', text: 'Drop 3: Crown plaza', short: 'DROP 3', x: 60, z: -20, r: 6, line: ['elena', 'Last one. I am uploading.'] },
     ],
-    outro: [['Elena', 'Got it all. Obsidian routes are naked now.']],
+    outro: [['elena', 'Got it all. Obsidian routes are naked now.']],
   },
   {
-    id: 'm6', title: 'Heat Wave', district: 'palma', cash: 2000, respect: 100,
+    id: 'm6', title: 'Heat Wave', district: 'palma', cash: 2000, respect: 100, par: 120,
     start: { x: -110, z: 20 },
-    intro: [['Elena', 'Obsidian tipped the SCMPD. Disappear.']],
+    intro: [['harper', 'All units, Obsidian tipped us on a stolen plate. Bring him in.']],
     steps: [
-      { type: 'evade', text: 'Lose the SCMPD', line: ['Mateo', 'Three stars. They really want me.'] },
-      { type: 'goto', text: 'Hide out at the safehouse', x: -240, z: -45, r: 6, line: ['Elena', 'Safehouse is clear. Come home.'] },
+      { type: 'evade', text: 'Lose the SCMPD', short: 'LOSE SCMPD', line: ['kai', 'Three stars. They really want me.'] },
+      { type: 'goto', text: 'Hide out at the safehouse', short: 'HIDE OUT', x: -240, z: -45, r: 6, line: ['elena', 'Safehouse is clear. Come home.'] },
     ],
-    outro: [['Elena', 'You vanished like a magician. Rest up.']],
+    outro: [['elena', 'You vanished like a magician. Rest up.']],
   },
   {
-    id: 'm7', title: 'Iron Dock', district: 'harbor', cash: 3000, respect: 120,
+    id: 'm7', title: 'Iron Dock', district: 'harbor', cash: 3000, respect: 120, par: 100,
     start: { x: -20, z: 120 },
-    intro: [['Elena', 'Obsidian wheeled a Bastion APC onto the quay. Break it.']],
+    intro: [['elena', 'Obsidian wheeled a Bastion APC onto the quay. Break it.']],
     steps: [
-      { type: 'goto', text: 'Reach Harbor Caldera quay', x: -20, z: 150, r: 7, line: ['Elena', 'It is armoured. Use the pulse rifle.'] },
-      { type: 'destroy', text: 'Destroy the Obsidian Bastion APC', x: -20, z: 175, line: ['Mateo', 'Big truck. Bigger bang.'] },
+      { type: 'goto', text: 'Reach Harbor Caldera quay', short: 'REACH QUAY', x: -20, z: 150, r: 7, line: ['marco', 'It is armoured. Use the pulse rifle.'] },
+      { type: 'destroy', text: 'Destroy the Obsidian Bastion APC', short: 'DESTROY APC', x: -20, z: 175, line: ['kai', 'Big truck. Bigger bang.'] },
     ],
-    outro: [['Elena', 'APC is slag. Their last asset in the port.']],
+    outro: [['elena', 'APC is slag. Their last asset in the port.']],
   },
   {
-    id: 'm8', title: 'Solaris Coast', district: 'mirador', cash: 5000, respect: 200,
+    id: 'm8', title: 'Solaris Coast', district: 'mirador', cash: 5000, respect: 200, par: 90,
     start: { x: 141, z: -30 },
-    intro: [['Elena', 'Their boss is on Mirador sands. This ends tonight.']],
+    intro: [['elena', 'Their boss is on Mirador sands. This ends tonight.']],
     steps: [
-      { type: 'goto', text: 'Reach the beach showdown', x: 180, z: -30, r: 6, line: ['Elena', 'I see eight guns. Stay sharp.'] },
-      { type: 'kill', text: 'Defeat the Obsidian Syndicate', n: 8, x: 185, z: -20, line: ['Mateo', 'Here we go.'] },
+      { type: 'goto', text: 'Reach the beach showdown', short: 'REACH BEACH', x: 180, z: -30, r: 6, line: ['elena', 'I see eight guns. I am on my way down to you.'] },
+      { type: 'kill', text: 'Defeat the Obsidian Syndicate', short: 'DEFEAT SYNDICATE', n: 8, x: 185, z: -20, ally: true, line: ['kai', 'Here we go.'] },
     ],
-    outro: [['Elena', 'Bahia Solaris is ours. Watch the sunset, brother.']],
+    outro: [['elena', 'Bahia Solaris is ours. Watch the sunset, Kai.']],
   },
 ];
 
 export const RADIO = [
-  { name: 'Mirador FM', bpm: 104 },
-  { name: 'Crown 98.3', bpm: 124 },
-  { name: 'Caldera Dub', bpm: 78 },
+  { name: 'SOLARIS FM', bpm: 104, tracks: ['Sunset Boulevard', 'Neon Tide', 'Glass Horizon'] },
+  { name: 'PALM WAVE 98.4', bpm: 124, tracks: ['Neon Undertow', 'Coral Static', 'Midnight Cabana'] },
+  { name: 'HARBOR BASS', bpm: 78, tracks: ['Concrete Tide', 'Dockside Pulse', 'Salt and Rust'] },
 ];
+export const RADIO_OFF = 'OFF AIR';

@@ -1,4 +1,4 @@
-// Story missions: glowing beacons, step tracking, Elena and Mateo radio lines, rewards.
+// Story missions: glowing beacons, step tracking, crew radio lines, graded rewards, Elena as a firefight ally.
 import * as THREE from 'three';
 import { DISTRICTS, MISSIONS } from './config.js';
 import { beamTexture } from './textures.js';
@@ -37,8 +37,12 @@ export function createMissions(G) {
   const objB = makeBeacon('#4ae8ff');
   G.scene.add(startB, objB);
 
-  M.say = (lines) => {
-    for (const l of lines) M.lines.push(l);
+  /** Queues radio lines; `now` puts them in front, for crew callouts that should not wait. */
+  M.say = (lines, now = false) => {
+    if (now) {
+      M.lines.unshift(...lines);
+      M.lineT = 0;
+    } else M.lines.push(...lines);
   };
 
   M.current = () => (M.active ? M.active.def : MISSIONS[M.done] || null);
@@ -54,6 +58,7 @@ export function createMissions(G) {
     const s = def.steps[M.step];
     M.kills = 0;
     M.target = null;
+    if (!s.ally) G.combat.removeAlly();
     if (s.line) M.say([s.line]);
     M.objective = { text: s.text, x: s.x, z: s.z };
     if (s.type === 'getcar') {
@@ -61,6 +66,7 @@ export function createMissions(G) {
       M.target = v;
       M.spawned.push(v);
     } else if (s.type === 'kill') {
+      if (s.ally) G.combat.spawnAlly(G.player.x - 3, G.player.z - 3);
       for (let i = 0; i < s.n; i += 1) {
         const a = (i / s.n) * 6.28;
         const r = 9 + (i % 3) * 3;
@@ -115,8 +121,10 @@ export function createMissions(G) {
     M.done += 1;
     G.player.cash += def.cash;
     G.activities.addRespect(def.district, def.respect);
-    G.hud.banner('MISSION PASSED', '#ffd24a', `${def.title}  +$${def.cash}`);
+    const res = G.progress.finishMission(def);
+    G.hud.banner('MISSION PASSED', '#ffd24a', `${def.title}  +$${def.cash}  GRADE ${res.grade}  +${res.rp} RP`);
     M.say(def.outro);
+    G.combat.removeAlly();
     M.active = null;
     M.objective = null;
     objB.visible = false;
@@ -131,6 +139,7 @@ export function createMissions(G) {
     M.objective = null;
     objB.visible = false;
     M.target = null;
+    G.combat.removeAlly();
     for (const e of M.spawned) {
       if (e.spec) {
         if (e !== G.player.vehicle) G.vehicles.remove(e);
@@ -149,6 +158,7 @@ export function createMissions(G) {
     startB.visible = false;
     M.say(def.intro);
     G.hud.toast(def.title);
+    G.progress.startMission();
     beginStep();
   };
 
@@ -237,14 +247,26 @@ export function createMissions(G) {
     }
   };
 
+  /** HUD view of the contract: title, objective, STAGE x/y, NEXT line and the pace clock against par. */
   M.info = () => {
     const def = M.current();
-    if (!def) return { title: 'BAHIA SOLARIS IS YOURS', text: 'All missions complete. Free roam.', dist: null, x: null, z: null, district: null };
+    if (!def) return { title: 'BAHIA SOLARIS IS YOURS', text: 'All missions complete. Free roam.', dist: null, x: null, z: null, district: null, stage: 0, totalStages: 0, objectiveShort: 'FREE ROAM', nextText: '', elapsed: null, par: null };
+    const total = def.steps.length;
     const dist = M.objective && M.objective.x !== null ? Math.hypot(G.player.x - M.objective.x, G.player.z - M.objective.z) : null;
-    if (!M.active) return { title: def.title, text: `Go to the marker (${DISTRICTS.find((d) => d.id === def.district).name})`, dist: Math.hypot(G.player.x - def.start.x, G.player.z - def.start.z), x: def.start.x, z: def.start.z, district: def.district };
+    if (!M.active) {
+      return {
+        title: def.title, text: `Go to the marker (${DISTRICTS.find((d) => d.id === def.district).name})`, dist: Math.hypot(G.player.x - def.start.x, G.player.z - def.start.z),
+        x: def.start.x, z: def.start.z, district: def.district, stage: 0, totalStages: total, objectiveShort: 'GO TO MARKER', nextText: `NEXT: ${def.steps[0].short}`, elapsed: null, par: def.par,
+      };
+    }
     const s = def.steps[M.step];
+    const next = def.steps[M.step + 1];
     const extra = s.type === 'kill' ? ` (${M.kills}/${s.n})` : '';
-    return { title: def.title, text: M.objective.text + extra, dist, x: M.objective.x, z: M.objective.z, district: def.district };
+    return {
+      title: def.title, text: M.objective.text + extra, dist, x: M.objective.x, z: M.objective.z, district: def.district,
+      stage: M.step + 1, totalStages: total, objectiveShort: s.short, nextText: next ? `NEXT: ${next.short}` : 'NEXT: PAYOUT',
+      elapsed: G.progress.run ? G.time() - G.progress.run.t0 : null, par: def.par,
+    };
   };
 
   showStart();

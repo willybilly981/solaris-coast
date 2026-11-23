@@ -28,10 +28,73 @@ const DISPATCH = [
   'CONDOR-1 is airborne. Suspect armed and dangerous.',
   'All units: Bastion APC to the {d} blockade.',
 ];
+const CHIEF_LINES = { 3: 'All units, suspect is armed. Close the net.', 4: 'CONDOR-1, put the light on him.', 5: 'Bring up the Bastion. End this tonight.' };
+
+export const STATE_COLORS = {
+  PURSUIT: '#6fb8ff', FLANKING: '#ffb02e', RAMMING: '#ff4a4a', ROADBLOCK: '#ff8a3a',
+  SPOTLIGHT: '#fff0a0', FIRING: '#ff3a5a', JAMMED: '#b46bff', SEARCHING: '#8fe9ff',
+};
+const CAR_CALLSIGNS = ['UNIT-04', 'INTERCEPT-2', 'UNIT-11', 'INTERCEPT-5', 'UNIT-17', 'INTERCEPT-9', 'UNIT-23', 'INTERCEPT-3'];
+const FOOT_CALLSIGNS = { tactical: ['ENFORCER-7', 'ENFORCER-3', 'ENFORCER-9', 'ENFORCER-5'], patrol: ['UNIT-31', 'UNIT-32', 'UNIT-33', 'UNIT-34'] };
+const callsigns = { car: 0, tactical: 0, patrol: 0 };
+
+function callsignFor(kind, u) {
+  if (!u.callsign) {
+    const pool = kind === 'car' ? CAR_CALLSIGNS : FOOT_CALLSIGNS[kind];
+    u.callsign = pool[callsigns[kind] % pool.length];
+    callsigns[kind] += 1;
+  }
+  return u.callsign;
+}
+
+/** Tactical state of one unit, from what its AI is doing right now. */
+function unitState(G, kind, u) {
+  const P = G.police;
+  if (P.jamT > 0) return 'JAMMED';
+  if (P.searchT > 0 || u.leaving) return 'SEARCHING';
+  if (kind === 'heli') return 'SPOTLIGHT';
+  const pl = G.player;
+  const pos = kind === 'heli' ? u.pos : u;
+  const dist = Math.hypot(pos.x - pl.x, pos.z - pl.z);
+  if (kind === 'car') {
+    if (u.specId === 'bastion') return dist < 55 ? 'FIRING' : 'PURSUIT';
+    if (!u.ai && u.sleep) return 'ROADBLOCK';
+    if (dist < 14) return 'RAMMING';
+  } else {
+    if (u.hold) return 'ROADBLOCK';
+    if (u.fireT > 0) return 'FIRING';
+  }
+  const bearing = Math.atan2(pos.x - pl.x, pos.z - pl.z);
+  const behind = Math.abs(Math.atan2(Math.sin(bearing - (pl.heading + Math.PI)), Math.cos(bearing - (pl.heading + Math.PI))));
+  return dist < 50 && behind > 0.35 ? 'FLANKING' : 'PURSUIT';
+}
+
+/** The four nearest active SCMPD units, for the response table. */
+export function getTacticalUnits(G) {
+  const P = G.police;
+  if (P.stars === 0) return [];
+  const pl = G.player;
+  const rows = [];
+  const add = (kind, u, pos, callsign) => rows.push({ callsign, kind, dist: Math.round(Math.hypot(pos.x - pl.x, pos.z - pl.z)), state: unitState(G, kind, u) });
+  for (const v of G.vehicles.list) if (v.owner === 'police' && !v.dead) add('car', v, v, v.specId === 'bastion' ? 'BASTION-1' : callsignFor('car', v));
+  for (const o of P.officers) if (o.hp > 0) add(o.type, o, o, callsignFor(o.type, o));
+  if (P.heli) add('heli', P.heli, P.heli.pos, 'CONDOR-1');
+  return rows.sort((a, b) => a.dist - b.dist).slice(0, 4).map((r) => ({ ...r, color: STATE_COLORS[r.state] }));
+}
+
+/** IN SIGHT / SEARCHING / JAMMED with the seconds until the heat decays, or CLEAR. */
+export function getChaseStatus(G) {
+  const P = G.police;
+  if (P.stars === 0) return { label: 'CLEAR', secs: 0, text: 'CLEAR' };
+  if (P.jamT > 0) return { label: 'JAMMED', secs: Math.ceil(P.jamT), text: `JAMMED ${Math.ceil(P.jamT)}s` };
+  if (P.seen) return { label: 'IN SIGHT', secs: 0, text: 'IN SIGHT' };
+  const secs = Math.ceil(Math.max(0, 6 - P.seenT) + P.heat / 3.6);
+  return { label: 'SEARCHING', secs, text: `SEARCHING ${secs}s` };
+}
 
 export function createPolice(G) {
   const rng = G.rng;
-  const P = { heat: 0, stars: 0, officers: [], log: [], blocks: [], heli: null, seen: false, seenT: 0, forced: false, clock: 0, arrestT: 0, cooldown: 0 };
+  const P = { heat: 0, stars: 0, officers: [], log: [], blocks: [], heli: null, seen: false, seenT: 0, forced: false, clock: 0, arrestT: 0, cooldown: 0, peak: 0, maskT: 0, jamT: 0, searchT: 0, lastSeen: { x: 0, z: 0 } };
 
   P.radio = (text) => {
     P.log.push({ text, t: P.clock });
@@ -51,14 +114,18 @@ export function createPolice(G) {
     if (s > P.stars && announce) {
       const d = DISTRICTS.find((x) => x.id === districtAt(G.player.x, G.player.z));
       P.radio(`Dispatch: ${DISPATCH[s].replace('{d}', d ? d.name : 'the city')}`);
+      if (CHIEF_LINES[s]) G.missions.say([['harper', CHIEF_LINES[s]]], true);
       G.audio.alert();
     }
     if (s === 0 && P.stars > 0) P.radio('Dispatch: suspect lost. Units stand down.');
     P.stars = s;
+    P.peak = Math.max(P.peak, s);
   }
 
   P.addHeat = (n) => {
-    P.heat = Math.min(WANTED_TIERS[5].heat + 40, P.heat + n);
+    if (P.jamT > 0) return;
+    const gain = P.maskT > 0 ? n * 0.4 : n;
+    P.heat = Math.min(WANTED_TIERS[5].heat + 40, P.heat + gain);
     P.seenT = 0;
     setStarsFromHeat(true);
   };
@@ -73,10 +140,31 @@ export function createPolice(G) {
     P.heat = 0;
     setStarsFromHeat(false);
     P.stars = 0;
+    P.peak = 0;
     P.forced = false;
     for (const v of G.vehicles.list) if (v.owner === 'police') v.leaving = true;
     for (const b of P.blocks) b.done = true;
     for (const o of P.officers) o.leaving = true;
+  };
+
+  P.dropStars = (n) => {
+    const s = Math.max(0, P.stars - n);
+    if (s === 0) P.clear();
+    else {
+      P.heat = WANTED_TIERS[s].heat;
+      setStarsFromHeat(false);
+    }
+  };
+
+  P.jam = (secs) => {
+    P.jamT = secs;
+    P.searchT = 0;
+  };
+
+  P.searchZone = () => {
+    if (P.stars === 0) return null;
+    const r = 30 + P.stars * 10;
+    return P.seen ? { x: G.player.x, z: G.player.z, r } : { x: P.lastSeen.x, z: P.lastSeen.z, r: r + Math.min(40, P.seenT * 3) };
   };
 
   P.hurtOfficer = (o, dmg, byPlayer) => {
@@ -129,6 +217,7 @@ export function createPolice(G) {
     const pl = G.player;
     const inp = v.input;
     v.cap = v.specId === 'bastion' ? 1 : tier.speed || 0.72;
+    if (P.jamT > 0) v.cap = 0.35;
     v.sirens = !v.leaving;
     let tx = pl.x;
     let tz = pl.z;
@@ -178,7 +267,7 @@ export function createPolice(G) {
     if (v.specId === 'bastion' && !v.leaving) {
       v.turretAim = Math.atan2(pl.x - v.x, pl.z - v.z);
       v.fireT = (v.fireT || 0) - dt;
-      if (dist < 55 && v.fireT <= 0 && !v.dead) {
+      if (dist < 55 && v.fireT <= 0 && !v.dead && P.jamT <= 0) {
         v.fireT = 0.4;
         G.combat.enemyShoot(v.x, v.z, pl.x, pl.z, 4, 0.1, 'police');
         G.fx.muzzle(v.x + Math.sin(v.turretAim) * 2.6, 3, v.z + Math.cos(v.turretAim) * 2.6, '#ffd0a0');
@@ -231,19 +320,27 @@ export function createPolice(G) {
 
   function buildHeli() {
     const g = new THREE.Group();
-    const paint = new THREE.MeshStandardMaterial({ color: '#1a2438', roughness: 0.4, metalness: 0.5 });
+    // coastal patrol livery: white top, navy belly, gold waist band, so it reads against the sunset sky
+    const paint = new THREE.MeshStandardMaterial({ color: '#14284f', roughness: 0.4, metalness: 0.4 });
+    const white = new THREE.MeshStandardMaterial({ color: '#f6f8fc', roughness: 0.35, metalness: 0.2 });
+    const gold = new THREE.MeshBasicMaterial({ color: '#f2b630' });
     const glass = new THREE.MeshStandardMaterial({ color: '#8fd4ff', roughness: 0.1, metalness: 0.9, emissive: '#10304a' });
-    const body = new THREE.Mesh(new THREE.SphereGeometry(1.7, 16, 12), paint);
+    const body = new THREE.Group();
+    body.add(
+      new THREE.Mesh(new THREE.SphereGeometry(1.7, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), white),
+      new THREE.Mesh(new THREE.SphereGeometry(1.7, 16, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), paint),
+      new THREE.Mesh(new THREE.SphereGeometry(1.72, 16, 2, 0, Math.PI * 2, Math.PI / 2 - 0.1, 0.2), gold),
+    );
     body.scale.set(1, 0.95, 1.9);
     const cockpit = new THREE.Mesh(new THREE.SphereGeometry(1.2, 12, 10), glass);
     cockpit.position.set(0, 0.35, 1.6);
     cockpit.scale.set(0.95, 0.8, 1);
     const boom = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 5.6), paint);
     boom.position.set(0, 0.35, -4.6);
-    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.5, 0.9), paint);
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.5, 0.9), white);
     fin.position.set(0, 1.0, -7.2);
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(3.45, 0.25, 2.2), new THREE.MeshBasicMaterial({ color: '#f2f6ff' }));
-    stripe.position.set(0, 0.1, -0.2);
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.44, 0.6), gold);
+    stripe.position.set(0, 0.35, -3.6);
     const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.8, 8), paint);
     mast.position.y = 1.9;
     const rotor = new THREE.Group();
@@ -271,6 +368,7 @@ export function createPolice(G) {
     const redL = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), new THREE.MeshBasicMaterial({ color: '#ff2230' }));
     redL.position.set(0, 0.2, -7.9);
     g.add(body, cockpit, boom, fin, stripe, mast, rotor, tail, lamp, redL);
+    g.scale.setScalar(1.25);
     g.traverse((o) => {
       if (o.isMesh) o.castShadow = true;
     });
@@ -333,8 +431,9 @@ export function createPolice(G) {
     h.g.rotation.z = Math.sin(t * 0.9) * 0.04;
     h.rotor.rotation.y += dt * 40;
     h.tail.rotation.x += dt * 50;
-    h.aim.x += (px - h.aim.x) * Math.min(1, dt * 2.4);
-    h.aim.z += (pz - h.aim.z) * Math.min(1, dt * 2.4);
+    const follow = Math.min(1, dt * (P.jamT > 0 ? 0.3 : 2.4));
+    h.aim.x += (px - h.aim.x) * follow;
+    h.aim.z += (pz - h.aim.z) * follow;
     const from = vFrom.set(h.pos.x, h.pos.y - 1.2, h.pos.z);
     const to = vTo.set(h.aim.x, 0.25, h.aim.z);
     h.spot.position.copy(from);
@@ -380,7 +479,7 @@ export function createPolice(G) {
         const face = Math.atan2(dx, dz);
         o.dir = face;
         let speed = 0;
-        if (!o.hold) speed = dist > 14 ? (o.type === 'tactical' ? 4.6 : 3.8) : dist < 7 ? -2 : 0;
+        if (!o.hold && P.jamT <= 0) speed = dist > 14 ? (o.type === 'tactical' ? 4.6 : 3.8) : dist < 7 ? -2 : 0;
         o.x += Math.sin(face) * speed * dt + Math.cos(face) * o.strafe * 1.2 * dt;
         o.z += Math.cos(face) * speed * dt - Math.sin(face) * o.strafe * 1.2 * dt;
         o.t -= dt;
@@ -389,7 +488,9 @@ export function createPolice(G) {
           o.strafe = -o.strafe;
         }
         o.cd -= dt;
-        if (o.cd <= 0 && dist < 45) {
+        o.fireT = Math.max(0, (o.fireT || 0) - dt);
+        if (o.cd <= 0 && dist < 45 && P.jamT <= 0) {
+          o.fireT = 0.7;
           o.cd = o.type === 'tactical' ? rng.range(0.2, 0.4) : rng.range(0.6, 1.1);
           G.combat.enemyShoot(o.x, o.z, pl.x, pl.z, o.type === 'tactical' ? 3.5 : 5, 0.1, 'police');
           G.fx.muzzle(o.x + Math.sin(face), 1.4, o.z + Math.cos(face), '#ffd0a0');
@@ -424,11 +525,24 @@ export function createPolice(G) {
     for (const o of P.officers) if (o.hp > 0 && Math.hypot(o.x - G.player.x, o.z - G.player.z) < 50) seen = true;
     if (P.heli && Math.hypot(P.heli.pos.x - G.player.x, P.heli.pos.z - G.player.z) < 60) seen = true;
     P.seen = seen;
-    if (seen) P.seenT = 0;
-    else P.seenT += dt;
+    if (seen) {
+      P.seenT = 0;
+      P.lastSeen.x = G.player.x;
+      P.lastSeen.z = G.player.z;
+    } else P.seenT += dt;
+    P.maskT = Math.max(0, P.maskT - dt);
+    P.searchT = Math.max(0, P.searchT - dt);
+    if (P.jamT > 0) {
+      P.jamT -= dt;
+      if (P.jamT <= 0) P.searchT = 4;
+    }
     if (P.stars > 0 && P.seenT > 6 && !P.forced) {
       P.heat = Math.max(0, P.heat - dt * 3.6);
       setStarsFromHeat(false);
+      if (P.stars === 0) {
+        G.progress.onEvade(P.peak);
+        P.peak = 0;
+      }
     }
     if (P.stars === 0) P.forced = false;
     if (P.stars > 0 && P.cooldown <= 0 && !P.frozen) {

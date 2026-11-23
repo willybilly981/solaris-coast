@@ -28,35 +28,61 @@ function noise(g, w, h, rnd, amount, count) {
   }
 }
 
-/** Road segment: u across the 14 m width, v along 28 m. Edge lines and a dashed yellow centre. */
-export function roadTexture() {
+const ASPHALT = '#545a68';
+
+/** Lane arrow, tip toward the top of the canvas (+v) unless `down` turns it around. */
+function laneArrow(g, cx, cy, down) {
+  g.save();
+  g.translate(cx, cy);
+  if (down) g.scale(1, -1);
+  g.fillStyle = 'rgba(248,250,252,0.92)';
+  g.beginPath();
+  g.moveTo(0, -46);
+  g.lineTo(17, -14);
+  g.lineTo(6, -14);
+  g.lineTo(6, 46);
+  g.lineTo(-6, 46);
+  g.lineTo(-6, -14);
+  g.lineTo(-17, -14);
+  g.closePath();
+  g.fill();
+  g.restore();
+}
+
+/**
+ * Road segment: u across the 14 m width, v along 28 m. White edge lines, a solid double-yellow centre and one
+ * arrow per lane. Avenues and streets get opposite arrow pairs because their lanes run in opposite u order.
+ */
+export function roadTexture(streets = false) {
   const c = canvas(256, 512);
   const g = c.getContext('2d');
   const rnd = mulberry32(11);
-  g.fillStyle = '#3a3d46';
+  g.fillStyle = ASPHALT;
   g.fillRect(0, 0, 256, 512);
-  noise(g, 256, 512, rnd, 0.07, 5000);
-  g.fillStyle = 'rgba(0,0,0,0.12)';
+  noise(g, 256, 512, rnd, 0.09, 6500);
+  g.fillStyle = 'rgba(0,0,0,0.07)';
   g.fillRect(70, 0, 22, 512);
   g.fillRect(164, 0, 22, 512);
-  g.fillStyle = '#e9ecef';
+  g.fillStyle = '#f4f6f8';
   g.fillRect(14, 0, 6, 512);
   g.fillRect(236, 0, 6, 512);
-  g.fillStyle = '#f2c230';
-  g.fillRect(124, 40, 8, 190);
-  g.fillRect(124, 300, 8, 190);
+  g.fillStyle = '#ffcf2e';
+  g.fillRect(119, 0, 5, 512);
+  g.fillRect(132, 0, 5, 512);
+  laneArrow(g, 64, 300, streets);
+  laneArrow(g, 192, 300, !streets);
   return toTexture(c);
 }
 
-/** Intersection square: asphalt with zebra crossings on all four edges. */
+/** Intersection square: asphalt with bright zebra crossings on all four edges. */
 export function intersectionTexture() {
   const c = canvas(256, 256);
   const g = c.getContext('2d');
   const rnd = mulberry32(12);
-  g.fillStyle = '#3a3d46';
+  g.fillStyle = ASPHALT;
   g.fillRect(0, 0, 256, 256);
-  noise(g, 256, 256, rnd, 0.07, 2500);
-  g.fillStyle = 'rgba(235,238,242,0.9)';
+  noise(g, 256, 256, rnd, 0.09, 3200);
+  g.fillStyle = 'rgba(250,251,253,0.97)';
   for (let i = 0; i < 9; i += 1) {
     const p = 18 + i * 26;
     g.fillRect(p, 4, 14, 34);
@@ -71,9 +97,9 @@ export function asphaltTexture() {
   const c = canvas(256, 256);
   const g = c.getContext('2d');
   const rnd = mulberry32(13);
-  g.fillStyle = '#3c3f48';
+  g.fillStyle = '#585e6c';
   g.fillRect(0, 0, 256, 256);
-  noise(g, 256, 256, rnd, 0.08, 4000);
+  noise(g, 256, 256, rnd, 0.09, 4000);
   g.strokeStyle = 'rgba(255,255,255,0.7)';
   g.lineWidth = 5;
   for (let x = 0; x <= 256; x += 64) {
@@ -140,7 +166,7 @@ export function glassFacade(hue, seed) {
   const emi = canvas(256, 512);
   const g = map.getContext('2d');
   const e = emi.getContext('2d');
-  g.fillStyle = `hsl(${hue},25%,22%)`;
+  g.fillStyle = `hsl(${hue},30%,38%)`;
   g.fillRect(0, 0, 256, 512);
   e.fillStyle = '#000';
   e.fillRect(0, 0, 256, 512);
@@ -149,11 +175,11 @@ export function glassFacade(hue, seed) {
       const x = col * 64 + 6;
       const y = r * 64 + 8;
       const grad = g.createLinearGradient(0, y, 0, y + 48);
-      grad.addColorStop(0, `hsl(${hue},55%,${48 + r * 2}%)`);
-      grad.addColorStop(1, `hsl(${hue + 20},60%,24%)`);
+      grad.addColorStop(0, `hsl(${hue},62%,${62 + r}%)`);
+      grad.addColorStop(1, `hsl(${hue + 20},58%,40%)`);
       g.fillStyle = grad;
       g.fillRect(x, y, 52, 48);
-      if (rnd() < 0.42) {
+      if (rnd() < 0.34) {
         const warm = rnd() < 0.7;
         e.fillStyle = warm ? `hsl(${38 + rnd() * 14},95%,${58 + rnd() * 12}%)` : `hsl(${hue},80%,70%)`;
         e.fillRect(x, y, 52, 48);
@@ -177,7 +203,7 @@ export function decoFacade(color, seed) {
     g.fillRect(x - 3, 10, 46, 236);
     for (let r = 0; r < 4; r += 1) {
       const y = 18 + r * 58;
-      g.fillStyle = '#245870';
+      g.fillStyle = '#3d8fae';
       g.beginPath();
       g.moveTo(x, y + 44);
       g.lineTo(x, y + 12);
@@ -190,6 +216,31 @@ export function decoFacade(color, seed) {
   }
   g.fillStyle = 'rgba(0,0,0,0.12)';
   g.fillRect(0, 0, 256, 6);
+  return toTexture(c);
+}
+
+const AWNINGS = ['#ff5f7e', '#2fd0d0', '#ffc24a', '#9b7bff', '#5fe08a'];
+
+/** Lit ground-floor shop strip: warm windows under striped awnings, one 32 m repeat. */
+export function storefrontTexture() {
+  const c = canvas(512, 128);
+  const g = c.getContext('2d');
+  g.fillStyle = '#2a2430';
+  g.fillRect(0, 0, 512, 128);
+  for (let i = 0; i < 4; i += 1) {
+    const x = i * 128 + 6;
+    const warm = g.createLinearGradient(0, 40, 0, 120);
+    warm.addColorStop(0, '#fff2c0');
+    warm.addColorStop(1, '#ffb25a');
+    g.fillStyle = warm;
+    g.fillRect(x, 40, 116, 78);
+    g.fillStyle = 'rgba(60,30,10,0.35)';
+    g.fillRect(x + 56, 40, 4, 78);
+    for (let s = 0; s < 8; s += 1) {
+      g.fillStyle = s % 2 ? '#fff6ec' : AWNINGS[i % AWNINGS.length];
+      g.fillRect(x + s * 14.5, 14, 14.5, 26);
+    }
+  }
   return toTexture(c);
 }
 

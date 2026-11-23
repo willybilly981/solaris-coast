@@ -240,9 +240,23 @@ function rayBox(ox, oz, dx, dz, c) {
   return t0;
 }
 
+const ALLY_GUN = { pellets: 1, spread: 0.04, range: 55, dmg: 9, color: '#6fe8ff', id: 'smg' };
+
 export function createCombat(G) {
-  const C = { enemies: [], pickups: [] };
+  const C = { enemies: [], pickups: [], ally: null, shotT: 0, hitT: 0 };
   const rng = G.rng;
+
+  /** Pushes a walker out of any building box it overlaps. */
+  function pushOutOfBuildings(e) {
+    for (const c of G.city.collidersNear(e.x, e.z, 3)) {
+      if (e.x > c.x0 - 0.5 && e.x < c.x1 + 0.5 && e.z > c.z0 - 0.5 && e.z < c.z1 + 0.5) {
+        const cx = (c.x0 + c.x1) / 2;
+        const cz = (c.z0 + c.z1) / 2;
+        if (Math.abs(e.x - cx) / (c.x1 - c.x0) > Math.abs(e.z - cz) / (c.z1 - c.z0)) e.x = e.x > cx ? c.x1 + 0.5 : c.x0 - 0.5;
+        else e.z = e.z > cz ? c.z1 + 0.5 : c.z0 - 0.5;
+      }
+    }
+  }
   const pickupGeo = new THREE.OctahedronGeometry(0.42);
   const PK = { health: '#ff4a6a', armor: '#4aa8ff', ammo: '#ffd24a', cash: '#4aff7a' };
 
@@ -260,6 +274,7 @@ export function createCombat(G) {
   function targets(faction) {
     const out = [];
     if (faction !== 'enemy') for (const e of C.enemies) if (e.hp > 0) out.push({ x: e.x, z: e.z, r: 0.5, kind: 'enemy', ref: e });
+    if (faction === 'ally') return out;
     if (faction !== 'police') for (const o of G.police.officers) if (o.hp > 0) out.push({ x: o.x, z: o.z, r: 0.5, kind: 'officer', ref: o });
     for (const p of G.peds.list) if (p.state !== 'dead') out.push({ x: p.x, z: p.z, r: 0.45, kind: 'ped', ref: p });
     for (const v of G.vehicles.list) {
@@ -274,6 +289,7 @@ export function createCombat(G) {
 
   C.damageTarget = (hit, dmg, faction) => {
     const t = hit.ref;
+    if (faction === 'player' && hit.kind !== 'vehicle') C.hitT = 0.22;
     if (hit.kind === 'enemy') C.hurtEnemy(t, dmg, faction === 'player');
     else if (hit.kind === 'officer') G.police.hurtOfficer(t, dmg, faction === 'player');
     else if (hit.kind === 'ped') G.peds.damage(t, dmg, faction === 'player');
@@ -325,6 +341,7 @@ export function createCombat(G) {
     }
     G.audio.shot(weapon.id);
     G.alarm(ox, oz, 38);
+    if (faction === 'player') C.shotT = 0.14;
     return end;
   };
 
@@ -355,6 +372,7 @@ export function createCombat(G) {
     if (e.hp <= 0) {
       e.dead = 0;
       C.spawnPickup(rng.chance(0.5) ? 'ammo' : 'cash', e.x, e.z, rng.int(20, 80));
+      if (byPlayer) G.progress.onTakedown();
       if (byPlayer || e.mission) G.missions.onKill(e);
     }
   };
@@ -362,10 +380,60 @@ export function createCombat(G) {
   C.spawnEnemy = (x, z, o = {}) => {
     const mesh = createHumanoid({ shirt: '#3a1f52', pants: '#16131c', skin: rng.pick(['#e9b88f', '#b57a54', '#8a5a3a']), hair: '#0c0c10', hat: '#2a1740', gun: true, kind: 'thug', phase: rng.range(0, 6) });
     G.scene.add(mesh);
-    const e = { mesh, x, z, hp: o.hp || 60, dir: rng.range(0, 6.28), cd: rng.range(0.4, 1.2), alert: o.alert || 0, dead: -1, strafe: rng.sign(), t: 0, mission: !!o.mission };
+    const e = { mesh, x, z, hp: o.hp || 60, maxHp: o.hp || 60, dir: rng.range(0, 6.28), cd: rng.range(0.4, 1.2), alert: o.alert || 0, dead: -1, strafe: rng.sign(), t: 0, mission: !!o.mission };
     C.enemies.push(e);
     return e;
   };
+
+  C.spawnAlly = (x, z) => {
+    C.removeAlly();
+    const mesh = createHumanoid({ shirt: '#232a3b', pants: '#1d2433', skin: '#f1cdb0', hair: '#b03a2e', gun: true, kind: 'civ', phase: 2 });
+    G.scene.add(mesh);
+    C.ally = { mesh, x, z, dir: 0, cd: 0.4, fireT: 0 };
+    return C.ally;
+  };
+
+  C.removeAlly = () => {
+    if (!C.ally) return;
+    G.scene.remove(C.ally.mesh);
+    C.ally = null;
+  };
+
+  /** Elena shadows the player's left shoulder and covers fire on the nearest live gunman. */
+  function stepAlly(dt, t) {
+    const a = C.ally;
+    const pl = G.player;
+    let tgt = null;
+    let bd = 50;
+    for (const e of C.enemies) {
+      const d = Math.hypot(e.x - a.x, e.z - a.z);
+      if (e.hp > 0 && d < bd) {
+        bd = d;
+        tgt = e;
+      }
+    }
+    const wx = pl.x + Math.cos(pl.camYaw) * 3.2 - Math.sin(pl.camYaw) * 1.5;
+    const wz = pl.z - Math.sin(pl.camYaw) * 3.2 - Math.cos(pl.camYaw) * 1.5;
+    const gap = Math.hypot(wx - a.x, wz - a.z);
+    const speed = gap > 0.7 ? Math.min(6, gap * 1.6) : 0;
+    if (speed > 0) {
+      a.x += ((wx - a.x) / gap) * speed * dt;
+      a.z += ((wz - a.z) / gap) * speed * dt;
+    }
+    pushOutOfBuildings(a);
+    a.dir = tgt ? Math.atan2(tgt.x - a.x, tgt.z - a.z) : pl.camYaw;
+    a.cd -= dt;
+    a.fireT = Math.max(0, a.fireT - dt);
+    if (tgt && a.cd <= 0) {
+      a.cd = rng.range(0.18, 0.32);
+      a.fireT = 0.15;
+      C.shoot(a.x + Math.sin(a.dir) * 0.9, 1.35, a.z + Math.cos(a.dir) * 0.9, a.dir, ALLY_GUN, 'ally', null);
+      G.fx.muzzle(a.x + Math.sin(a.dir), 1.4, a.z + Math.cos(a.dir), '#6fe8ff');
+    }
+    a.mesh.position.set(a.x, 0.2, a.z);
+    a.mesh.rotation.y = a.dir;
+    animateHumanoid(a.mesh, speed, t, a.fireT > 0);
+  }
 
   C.blast = (x, z, r, dmg, src) => {
     for (const e of C.enemies) {
@@ -429,18 +497,14 @@ export function createCombat(G) {
           G.fx.muzzle(e.x + Math.sin(face), 1.4, e.z + Math.cos(face), '#ff80ff');
         }
       }
-      for (const c of G.city.collidersNear(e.x, e.z, 3)) {
-        if (e.x > c.x0 - 0.5 && e.x < c.x1 + 0.5 && e.z > c.z0 - 0.5 && e.z < c.z1 + 0.5) {
-          const cx = (c.x0 + c.x1) / 2;
-          const cz = (c.z0 + c.z1) / 2;
-          if (Math.abs(e.x - cx) / (c.x1 - c.x0) > Math.abs(e.z - cz) / (c.z1 - c.z0)) e.x = e.x > cx ? c.x1 + 0.5 : c.x0 - 0.5;
-          else e.z = e.z > cz ? c.z1 + 0.5 : c.z0 - 0.5;
-        }
-      }
+      pushOutOfBuildings(e);
       e.mesh.position.set(e.x, 0.2, e.z);
       e.mesh.rotation.y = e.dir;
       animateHumanoid(e.mesh, Math.abs(speed) + 1, t, e.alert > 0);
     }
+    if (C.ally) stepAlly(dt, t);
+    C.shotT = Math.max(0, C.shotT - dt);
+    C.hitT = Math.max(0, C.hitT - dt);
     for (let i = C.pickups.length - 1; i >= 0; i -= 1) {
       const p = C.pickups[i];
       p.t += dt;

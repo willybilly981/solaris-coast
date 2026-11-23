@@ -1,6 +1,8 @@
 // Web Audio synthesis: engine, siren, rotor, gunfire, explosions and three radio stations.
 // Everything is a no-op until a user gesture unlocks the AudioContext, and in headless runs.
-import { RADIO } from './config.js';
+import { RADIO, RADIO_OFF } from './config.js';
+
+const STEPS_PER_TRACK = 256;
 
 export function createAudio() {
   let ctx = null;
@@ -14,7 +16,11 @@ export function createAudio() {
   let step = 0;
   let nextTime = 0;
   let timer = null;
-  const A = { station: 0, radioName: RADIO[0].name };
+  const A = { station: 0 };
+
+  /** Curated track for the current station, rotating every STEPS_PER_TRACK sequencer steps. */
+  A.track = () => (radioOn ? RADIO[station].tracks[Math.floor(step / STEPS_PER_TRACK) % RADIO[station].tracks.length] : '');
+  A.nowPlaying = () => (radioOn ? `${RADIO[station].name} - ${A.track()}` : RADIO_OFF);
 
   function unlock() {
     if (ctx) {
@@ -122,9 +128,8 @@ export function createAudio() {
     station = (station + 1) % (RADIO.length + 1);
     radioOn = station < RADIO.length;
     A.station = station;
-    A.radioName = radioOn ? RADIO[station].name : 'Radio off';
     step = 0;
-    return A.radioName;
+    return A.nowPlaying();
   };
   A.engine = (speed, nitro, driving) => {
     if (!ctx || !engine) return;

@@ -241,6 +241,22 @@ function buildMesh(specId, colorHex) {
 
 let nextId = 1;
 
+/** Simulated gearbox: R, N, or 1-6 from the share of top speed. */
+export function gearFor(v) {
+  if (v.speed < -0.8) return 'R';
+  if (Math.abs(v.speed) < 0.8) return 'N';
+  return Math.min(6, 1 + Math.floor((Math.abs(v.speed) / (v.spec.maxSpeed * v.tune)) * 6));
+}
+
+/** Refreshes the telemetry fields the HUD reads: kmh, gear, conditionPct (from HP) and nitroPct. */
+export function updateTelemetry(v) {
+  v.kmh = Math.round(Math.abs(v.speed) * 3.6);
+  v.gear = gearFor(v);
+  v.conditionPct = Math.max(0, Math.min(100, Math.round((v.hp / v.maxHp) * 100)));
+  v.nitroPct = Math.round(v.nitro * 100);
+  return v;
+}
+
 export function createVehicles(G) {
   const list = [];
   const M = { list };
@@ -257,9 +273,9 @@ export function createVehicles(G) {
       x, z, y: 0.2, vy: 0, heading, vx: 0, vz: 0, speed: 0, yaw: 0, steer: 0, rise: 0,
       hp: spec.hp, maxHp: spec.hp, nitro: 1, boosting: false, burning: 0, dead: false, wreckTime: 0,
       input: { throttle: 0, brake: 0, steer: 0, hand: false, nitro: false }, driver: null, owner: o.owner || 'traffic',
-      ai: o.ai || null, air: false, sleep: false, smokeT: 0, tune: 1, radius: spec.wid * 0.55, label: o.label || '',
+      ai: o.ai || null, air: false, sleep: false, smokeT: 0, tune: 1, plating: 0, nitroLvl: 0, radius: spec.wid * 0.55, label: o.label || '',
     };
-    list.push(v);
+    list.push(updateTelemetry(v));
     return v;
   };
 
@@ -280,6 +296,7 @@ export function createVehicles(G) {
     if (v.dead || amount <= 0) return;
     v.hp -= amount * (v.spec.kind === 'apc' ? 0.35 : 1);
     v.sleep = false;
+    if (v.driver === 'player') G.progress.onHurt((amount / v.maxHp) * 100);
     if (v.hp <= 0 && !v.burning) {
       v.hp = 0;
       v.burning = 2.2;
@@ -325,7 +342,7 @@ export function createVehicles(G) {
     let vl = v.vx * lx + v.vz * lz;
     const boost = inp.nitro && s.nitro && v.nitro > 0.02 && vf > 2;
     v.boosting = boost;
-    if (boost) v.nitro = Math.max(0, v.nitro - 0.3 * dt);
+    if (boost) v.nitro = Math.max(0, v.nitro - (0.3 / (1 + 0.4 * v.nitroLvl)) * dt);
     else v.nitro = Math.min(1, v.nitro + 0.05 * dt);
     const maxSpeed = s.maxSpeed * v.tune * (boost ? 1.45 : 1) * (v.cap || 1);
     if (v.air) {
@@ -535,6 +552,7 @@ export function createVehicles(G) {
     collideVehicles();
     for (let i = list.length - 1; i >= 0; i -= 1) {
       const v = list[i];
+      updateTelemetry(v);
       visuals(v, t, dt);
       if (v.dead && v.wreckTime > 45 && v.driver !== 'player' && Math.hypot(v.x - G.player.x, v.z - G.player.z) > 60) M.remove(v);
     }

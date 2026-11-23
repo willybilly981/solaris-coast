@@ -1,14 +1,15 @@
-// Mateo Vance: on-foot movement, driving input, weapons, health, enter/exit and respawn.
+// Kai Vale: on-foot movement, driving input, rank-gated weapons, health, enter/exit and respawn.
 import { LANDMARKS, WEAPONS, WORLD } from './config.js';
 import { newWeaponState } from './combat.js';
 import { animateHumanoid, createHumanoid } from './pedestrians.js';
+import { weaponUnlocked } from './progression.js';
 
 export function createPlayer(G) {
   const mesh = createHumanoid({ shirt: '#ff7a3a', pants: '#1d2a44', skin: '#d9a77b', hair: '#1a100a', gun: true, kind: 'hero' });
   G.scene.add(mesh);
   const P = {
     mesh, x: LANDMARKS.start.x, z: LANDMARKS.start.z, y: 0.2, heading: Math.PI, camYaw: Math.PI, camPitch: 0.28, lookT: 0,
-    hp: 100, armor: 0, cash: 1500, weapons: newWeaponState(), weapon: 1, wheelT: 0, inVehicle: false, vehicle: null,
+    hp: 100, armor: 0, cash: 1500, weapons: newWeaponState(), weapon: 1, inVehicle: false, vehicle: null,
     walkSpeed: 0, hurtT: 0, dead: 0, wasted: false, fireHeld: false, prompt: '', aiming: false, nearVehicle: null,
   };
 
@@ -23,6 +24,7 @@ export function createPlayer(G) {
 
   P.hurt = (dmg, why) => {
     if (P.wasted || dmg <= 0) return;
+    G.progress.onHurt(dmg);
     const soak = Math.min(P.armor, dmg * 0.7);
     P.armor -= soak;
     P.hp -= dmg - soak;
@@ -110,8 +112,11 @@ export function createPlayer(G) {
 
   function selectWeapon(i) {
     if (i === P.weapon) return;
+    if (!weaponUnlocked(G.progress.rp, i)) {
+      G.hud.toast(`${WEAPONS[i].name.toUpperCase()}: RANK ${WEAPONS[i].rank}`);
+      return;
+    }
     P.weapon = i;
-    P.wheelT = 1.6;
     G.audio.click();
   }
 
@@ -161,7 +166,6 @@ export function createPlayer(G) {
   }
 
   P.step = (dt, t, input) => {
-    P.wheelT = Math.max(0, P.wheelT - dt);
     P.hurtT = Math.max(0, P.hurtT - dt);
     if (P.wasted) {
       P.dead += dt;
@@ -171,10 +175,10 @@ export function createPlayer(G) {
     if (P.hp < 100 && !P.inVehicle) P.hp = Math.min(100, P.hp + dt * 0.3);
     if (!G.activities?.garage.open) for (let i = 0; i < 5; i += 1) if (input.take(`Digit${i + 1}`)) selectWeapon(i);
     if (input.take('KeyQ')) {
-      selectWeapon((P.weapon + 1) % WEAPONS.length);
-      P.wheelT = 1.6;
+      let next = (P.weapon + 1) % WEAPONS.length;
+      while (!weaponUnlocked(G.progress.rp, next)) next = (next + 1) % WEAPONS.length;
+      selectWeapon(next);
     }
-    if (input.down('KeyQ')) P.wheelT = Math.max(P.wheelT, 0.6);
     if (input.down('ArrowLeft')) P.camYaw += dt * 2.2;
     if (input.down('ArrowRight')) P.camYaw -= dt * 2.2;
     if (input.down('ArrowUp')) P.camPitch = Math.min(0.9, P.camPitch + dt * 1.2);

@@ -1,6 +1,7 @@
 // Offline smoke tests for the audited fixes: Node 22+ built-ins only, no renderer, no network.
 // Run: node --test test/smoke.test.mjs
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import { test } from 'node:test';
 
@@ -79,13 +80,21 @@ const { createPolice } = await import('../game/src/police.js');
 const { createFx, createCombat } = await import('../game/src/combat.js');
 const { createPlayer } = await import('../game/src/player.js');
 const { createMissions } = await import('../game/src/missions.js');
-const { createActivities } = await import('../game/src/activities.js');
+const { createActivities, GARAGE_SERVICES } = await import('../game/src/activities.js');
 const { createSave } = await import('../game/src/save.js');
 const { createAudio } = await import('../game/src/audio.js');
+const { CREW, SPEAKERS, createCrewState, getCrewCards, getSpeakerPortrait, tickCrew, triggerCrewAbility } = await import('../game/src/crew.js');
+const { RANKS, RELIC_SPOTS, WEIGHTS, computeCompletion, createProgress, getRankInfo, gradeMission, weaponUnlocked } = await import('../game/src/progression.js');
+const { getAtlasState, planRoute } = await import('../game/src/atlas.js');
+const { updateTelemetry } = await import('../game/src/vehicles.js');
+const { STATE_COLORS, getChaseStatus, getTacticalUnits } = await import('../game/src/police.js');
+const { animateHumanoid, createHumanoid, createPeds } = await import('../game/src/pedestrians.js');
+const { MISSIONS, RADIO, ROADS } = await import('../game/src/config.js');
 
 function makeG(seed = 1) {
   const scene = new THREE.Scene();
-  const G = { scene, rng: createRandom(seed), glowTex: new THREE.Texture(), shake: noop, alarm: noop, alarmCrash: noop, banners: [] };
+  const G = { scene, rng: createRandom(seed), glowTex: new THREE.Texture(), shake: noop, alarm: noop, alarmCrash: noop, banners: [], clock: 0, waypoint: null };
+  G.time = () => G.clock;
   setGlowTexture(G.glowTex);
   G.hud = { banner: (...a) => G.banners.push(a), toast: noop };
   G.audio = sink();
@@ -97,6 +106,8 @@ function makeG(seed = 1) {
   G.combat = createCombat(G);
   G.blast = (...a) => G.combat.blast(...a);
   G.player = createPlayer(G);
+  G.crew = createCrewState();
+  G.progress = createProgress(G);
   G.missions = createMissions(G);
   G.activities = createActivities(G);
   G.save = createSave(G);
@@ -147,7 +158,7 @@ test('#2 max tune costs nothing and prices follow the Palma discount', () => {
   v.tune = 1;
   assert.equal(G.activities.garagePrices(v).tune, 400);
   G.activities.respect.palma = 100;
-  assert.deepEqual(G.activities.garagePrices(v), { repair: 110, respray: 74, tune: 368, clear: 460 });
+  assert.deepEqual(G.activities.garagePrices(v), { repair: 110, respray: 74, tune: 368, armor: 322, nitro: 276, ammo: 230, clear: 460 });
   assert.equal(G.activities.garagePrices(null).tune, null);
 });
 
@@ -326,4 +337,319 @@ function seededRun(seed) {
 test('#16 seeded fx and combat are deterministic', () => {
   assert.equal(seededRun(7), seededRun(7));
   assert.notEqual(seededRun(7), seededRun(8));
+});
+
+test('#17 crew Z swaps plates: drops stars, masks heat gain, 45 s cooldown', () => {
+  const G = makeG();
+  G.police.setStars(4);
+  assert.equal(triggerCrewAbility(G, 'Z'), true);
+  assert.equal(G.police.stars, 2);
+  assert.equal(G.police.maskT, 12);
+  assert.equal(G.crew.cd.Z, 45);
+  assert.equal(triggerCrewAbility(G, 'Z'), false, 'still cooling down');
+  const heat = G.police.heat;
+  G.police.addHeat(10);
+  assert.equal(G.police.heat, heat + 4, 'masked plates build 40% heat');
+  tickCrew(G, 10);
+  assert.equal(G.crew.cd.Z, 35);
+  tickCrew(G, 99);
+  assert.equal(G.crew.cd.Z, 0);
+  G.police.setStars(1);
+  triggerCrewAbility(G, 'Z');
+  assert.equal(G.police.stars, 0, 'a single star is cleared outright');
+});
+
+test('#18 crew X repairs the car or heals on foot, C jams dispatch and stalls escalation', () => {
+  const G = makeG();
+  G.player.hp = 50;
+  G.player.armor = 0;
+  assert.equal(triggerCrewAbility(G, 'X'), true);
+  assert.deepEqual([G.player.hp, G.player.armor], [75, 35]);
+  assert.equal(G.crew.cd.X, 35);
+
+  const G2 = makeG();
+  const v = G2.vehicles.spawn('solara', 141, 22, 0);
+  G2.player.enter(v);
+  v.hp = 40;
+  triggerCrewAbility(G2, 'X');
+  assert.equal(v.hp, 85);
+
+  const G3 = makeG();
+  G3.police.setStars(3);
+  const cop = G3.police.spawnCar(G3.player.x + 2, G3.player.z + 7, 0);
+  assert.equal(getTacticalUnits(G3)[0].state, 'RAMMING');
+  assert.equal(triggerCrewAbility(G3, 'C'), true);
+  assert.equal(G3.crew.cd.C, 50);
+  assert.equal(getTacticalUnits(G3)[0].state, 'JAMMED');
+  assert.equal(getChaseStatus(G3).label, 'JAMMED');
+  const heat = G3.police.heat;
+  G3.police.addHeat(50);
+  assert.equal(G3.police.heat, heat, 'star escalation is stalled while jammed');
+  G3.police.frozen = true;
+  G3.police.jamT = 0.05;
+  G3.police.step(0.1, 0);
+  assert.equal(getTacticalUnits(G3)[0].state, 'SEARCHING');
+  assert.ok(cop.cap === undefined || cop.cap > 0);
+
+  const cards = getCrewCards(G3);
+  assert.deepEqual(cards.map((c) => [c.slot, c.skill]), [['Z', 'SWAP PLATES'], ['X', 'QUICK FIX'], ['C', 'SIGNAL JAM']]);
+  assert.equal(cards[2].ready, false);
+  assert.equal(cards[2].label, '50s');
+  assert.equal(cards[0].label, 'READY');
+});
+
+test('#19 portraits are original inline SVG, 64x64, one per speaker', () => {
+  const ids = Object.keys(SPEAKERS);
+  assert.deepEqual(ids.sort(), ['elena', 'harper', 'kai', 'marco', 'sofia']);
+  assert.deepEqual(SPEAKERS.kai.name, 'KAI VALE');
+  assert.equal(CREW.length, 3);
+  const seen = new Set();
+  for (const id of ids) {
+    const svg = getSpeakerPortrait(id);
+    assert.match(svg, /^<svg [^>]*viewBox="0 0 64 64" width="64" height="64"/);
+    assert.ok(!/https?:|href=/.test(svg.replace('http://www.w3.org/2000/svg', '')), 'no external references');
+    seen.add(svg);
+  }
+  assert.equal(seen.size, 5);
+});
+
+test('#20 ranks, relics, grades and the completion formula', () => {
+  const at = (rp) => getRankInfo(rp);
+  assert.deepEqual([0, 249, 250, 700, 1400, 2500, 4200, 9999].map((rp) => at(rp).rank), [1, 1, 2, 3, 4, 5, 6, 6]);
+  assert.equal(at(700).label, 'RANK 3 - FIXER');
+  assert.equal(at(5000).next, null);
+  assert.equal(at(5000).pct, 1);
+  assert.equal(RANKS.length, 6);
+  assert.equal(RELIC_SPOTS.length, 12);
+  assert.equal(new Set(RELIC_SPOTS.map((r) => `${r.x},${r.z}`)).size, 12);
+
+  const G = makeG();
+  const spot = RELIC_SPOTS[0];
+  G.player.x = spot.x;
+  G.player.z = spot.z;
+  const cash = G.player.cash;
+  G.progress.step(0.016, 0);
+  G.progress.step(0.016, 0);
+  assert.deepEqual(G.progress.relics, [spot.id], 'collected once');
+  assert.equal(G.player.cash, cash + 1500);
+  assert.equal(G.progress.rp, 120);
+
+  assert.equal(gradeMission({ time: 60, par: 90, damage: 5, stars: 0 }), 'G');
+  assert.equal(gradeMission({ time: 100, par: 90, damage: 30, stars: 2 }), 'S');
+  assert.equal(gradeMission({ time: 400, par: 90, damage: 90, stars: 5 }), 'B');
+  G.progress.startMission();
+  G.clock = 50;
+  const res = G.progress.finishMission(MISSIONS[0]);
+  assert.equal(res.grade, 'G');
+  assert.equal(G.progress.grades.m1, 'G');
+  assert.equal(res.rp, 200);
+  G.progress.startMission();
+  G.clock = 400;
+  G.progress.finishMission(MISSIONS[0]);
+  assert.equal(G.progress.grades.m1, 'G', 'a worse run never lowers the best grade');
+
+  assert.equal(Object.values(WEIGHTS).reduce((a, b) => a + b, 0), 100);
+  const full = { missions: 8, progress: { rp: 4200, relics: RELIC_SPOTS.map((r) => r.id), garage: Object.fromEntries(GARAGE_SERVICES.map((s) => [s.id, true])), explored: ['mirador', 'crown', 'harbor', 'palma'], races: 3, stunts: 5, evades: 10, stats: { takedowns: 25 } } };
+  assert.equal(computeCompletion(full).pct, 100);
+  assert.equal(computeCompletion({ missions: 0 }).pct, 0);
+  assert.equal(computeCompletion({ missions: 4 }).pct, 15);
+  assert.equal(computeCompletion({ missions: 'x', progress: { relics: 'bad', rp: NaN, stats: 7 } }).pct, 0, 'corrupt saves count as empty');
+  assert.equal(weaponUnlocked(0, 3), false);
+  assert.equal(weaponUnlocked(250, 3), true);
+  assert.equal(weaponUnlocked(700, 4), true);
+  const fresh = makeG();
+  fresh.player.step(0.016, 0, makeInput(['Digit4']));
+  assert.equal(fresh.player.weapon, 1, 'shotgun stays locked at rank 1');
+  fresh.progress.addRp(250);
+  fresh.player.step(0.016, 0, makeInput(['Digit4']));
+  assert.equal(fresh.player.weapon, 3, 'rank 2 unlocks the shotgun');
+});
+
+test('#21 atlas road-grid routing and hub state', () => {
+  const corner = planRoute({ x: ROADS.x[0], z: ROADS.z[0] }, { x: ROADS.x[4], z: ROADS.z[4] });
+  assert.equal(corner.length, 330 + 350, 'A* finds the Manhattan length between two intersections');
+  const beach = planRoute({ x: 195, z: 40 }, { x: -20, z: 150 });
+  assert.equal(beach.points[0].x, 195);
+  assert.deepEqual(beach.points.at(-1), { x: -20, z: 150 });
+  const road = beach.points.slice(1, -1);
+  for (let i = 1; i < road.length; i += 1) assert.ok(road[i].x === road[i - 1].x || road[i].z === road[i - 1].z, 'route stays on the street grid');
+  assert.deepEqual(road[0], { x: 137, z: 60 }, 'the beach snaps to the nearest street end');
+  assert.ok(beach.length >= Math.hypot(215, 110));
+  assert.ok(planRoute({ x: 60, z: -20 }, { x: 60, z: -20 }).length < 1);
+
+  const G = makeG();
+  G.missions.reset(3);
+  G.progress.grades.m1 = 'G';
+  G.progress.relics.push('r1', 'r2');
+  const S = getAtlasState(G);
+  assert.deepEqual(S.bars.map((b) => b.label), ['CONTRACTS', 'RELICS', 'DISTRICTS', 'GARAGE', 'SIDE OPS', 'HEAT EVADES', 'RANK RP']);
+  assert.equal(S.bars[0].text, '3/8');
+  assert.equal(S.bars[1].text, '2/12');
+  assert.deepEqual(S.contracts.map((c) => c.status), ['DONE', 'DONE', 'DONE', 'OPEN', 'LOCKED', 'LOCKED', 'LOCKED', 'LOCKED']);
+  assert.equal(S.contracts[0].grade, 'G');
+  assert.equal(S.stats.length, 6);
+  assert.equal(S.slots.length, 3);
+  assert.equal(S.completion, G.progress.completion().pct);
+  assert.equal(S.target.kind, 'OBJECTIVE');
+  assert.ok(S.route.length > 0);
+  G.waypoint = { x: -20, z: 150 };
+  assert.equal(getAtlasState(G).target.kind, 'WAYPOINT');
+});
+
+test('#22 vehicle telemetry: condition, gear, km/h and nitro', () => {
+  const G = makeG();
+  const v = G.vehicles.spawn('solara', 0, 0, 0);
+  v.hp = 50;
+  v.speed = 30;
+  v.nitro = 0.4;
+  updateTelemetry(v);
+  assert.deepEqual([v.conditionPct, v.kmh, v.nitroPct], [50, 108, 40]);
+  const gear = (speed) => updateTelemetry(Object.assign(v, { speed })).gear;
+  assert.deepEqual([-3, 0, 1, 19, 38, 60].map(gear), ['R', 'N', 1, 4, 6, 6]);
+  v.hp = -5;
+  assert.equal(updateTelemetry(v).conditionPct, 0);
+});
+
+test('#23 SCMPD tactical units carry callsigns and live states', () => {
+  const G = makeG();
+  G.player.x = 141;
+  G.player.z = 22;
+  G.police.setStars(4);
+  const ram = G.police.spawnCar(143, 29, 0);
+  const flank = G.police.spawnCar(156, 34, 0);
+  const tail = G.police.spawnCar(141, 62, 0);
+  G.police.ensureHeli(true);
+  G.police.heli.pos.set(141, 34, 47);
+  const far = G.police.spawnOfficer(141, 100, 'tactical');
+  far.fireT = 1;
+  const units = getTacticalUnits(G);
+  assert.equal(units.length, 4, 'top four only');
+  assert.deepEqual(units.map((u) => u.state), ['RAMMING', 'FLANKING', 'SPOTLIGHT', 'PURSUIT']);
+  assert.equal(units[2].callsign, 'CONDOR-1');
+  for (const u of units) {
+    assert.match(u.callsign, /^[A-Z]+-\d+$/);
+    assert.equal(u.color, STATE_COLORS[u.state]);
+  }
+  assert.deepEqual(units.map((u) => u.dist), [...units.map((u) => u.dist)].sort((a, b) => a - b));
+  assert.ok([ram, flank, tail].every((c) => c.callsign));
+  assert.equal(far.fireT, 1);
+  const g2 = getTacticalUnits({ ...G, police: Object.assign(Object.create(G.police), { stars: 0 }) });
+  assert.deepEqual(g2, []);
+
+  G.police.seen = true;
+  assert.equal(getChaseStatus(G).label, 'IN SIGHT');
+  G.police.seen = false;
+  G.police.seenT = 2;
+  G.police.heat = 60;
+  assert.equal(getChaseStatus(G).text, 'SEARCHING 21s');
+  G.police.clear();
+  assert.equal(getChaseStatus(G).label, 'CLEAR');
+});
+
+test('#24 crew garage offers seven services on keys 1-7', () => {
+  const G = makeG();
+  const v = driveToGarage(G);
+  G.player.cash = 100000;
+  assert.deepEqual(GARAGE_SERVICES.map((s) => s.label), ['REPAIR', 'RESPRAY', 'STAGE TUNE', 'ARMOR PLATING', 'NITRO SYSTEM', 'AMMO + ARMOR', 'CLEAR HEAT']);
+  G.police.setStars(3);
+  v.hp = 30;
+  G.player.weapons[1].mag = 0;
+  G.player.weapons[1].reserve = 0;
+  for (let i = 0; i < 7; i += 1) G.activities.garageAct(i);
+  assert.equal(v.maxHp, 125, 'armor plating adds 25% of base HP');
+  assert.equal(v.hp, 125, 'repair first, then plating raises both');
+  assert.equal(v.nitroLvl, 1);
+  assert.ok(Math.abs(v.tune - 1.07) < 1e-9);
+  assert.equal(G.player.armor, 100);
+  assert.equal(G.player.weapons[1].reserve, WEAPONS[1].reserve);
+  assert.equal(G.police.stars, 0);
+  assert.ok(GARAGE_SERVICES.every((s) => G.progress.garage[s.id]));
+  assert.equal(G.progress.completion().parts.garage, 1);
+  assert.equal(G.activities.garagePrices(v).tune, 800);
+  G.activities.garageAct(3);
+  G.activities.garageAct(3);
+  G.activities.garageAct(3);
+  assert.equal(G.activities.garage.msg, 'Plating maxed');
+  assert.equal(v.plating, 3);
+
+  const G2 = makeG();
+  G2.police.setStars(3);
+  const v2 = driveToGarage(G2);
+  G2.activities.garageAct(1);
+  assert.equal(G2.police.stars, 2, 'respray sheds one star');
+  assert.notEqual(v2.parts.paint.color.getHexString(), 'ff4a1c');
+});
+
+test('#25 radio stations pair with curated track names', () => {
+  const realSetInterval = globalThis.setInterval;
+  globalThis.setInterval = () => 0;
+  const A = createAudio();
+  try {
+    assert.equal(A.nowPlaying(), 'SOLARIS FM - Sunset Boulevard');
+    assert.equal(A.toggleRadio(), 'PALM WAVE 98.4 - Neon Undertow');
+    assert.equal(A.toggleRadio(), 'HARBOR BASS - Concrete Tide');
+    assert.equal(A.toggleRadio(), 'OFF AIR');
+    assert.equal(A.toggleRadio(), 'SOLARIS FM - Sunset Boulevard');
+  } finally {
+    globalThis.setInterval = realSetInterval;
+  }
+  assert.ok(RADIO.every((r) => r.tracks.length >= 3));
+});
+
+test('#26 mission state reports stage, objective and next line', () => {
+  const G = makeG();
+  G.missions.reset(0);
+  const idle = G.missions.info();
+  assert.deepEqual([idle.stage, idle.totalStages, idle.nextText], [0, 3, 'NEXT: MEET CONTACT']);
+  G.missions.start();
+  let info = G.missions.info();
+  assert.deepEqual([info.stage, info.totalStages, info.objectiveShort, info.nextText], [1, 3, 'MEET CONTACT', 'NEXT: TAKE SOLARA']);
+  G.missions.jump(2);
+  info = G.missions.info();
+  assert.deepEqual([info.stage, info.nextText, info.par], [3, 'NEXT: PAYOUT', 90]);
+  assert.equal(typeof info.elapsed, 'number');
+});
+
+test('#27 gunfire makes nearby pedestrians put their hands up', () => {
+  const G = makeG();
+  G.peds = createPeds(G);
+  const near = Array.from({ length: 20 }, () => G.peds.spawnAt(1, 1));
+  const far = G.peds.spawnAt(30, 0);
+  G.peds.alarm(0, 0, 38);
+  assert.ok(near.every((p) => p.state === 'flee'));
+  assert.ok(near.some((p) => p.handsUp), 'some freeze with hands up');
+  assert.ok(near.some((p) => !p.handsUp), 'others sprint away');
+  assert.equal(far.state, 'flee');
+  assert.equal(far.handsUp, false, 'distant pedestrians just run');
+  const h = createHumanoid({});
+  animateHumanoid(h, 6, 0, false, true);
+  assert.ok(h.userData.armL.rotation.x < -2.5 && h.userData.armR.rotation.x < -2.5);
+});
+
+test('#28 Elena covers the player, and player shots feed the reticle timers', () => {
+  const G = makeG();
+  G.combat.spawnEnemy(G.player.x + 10, G.player.z + 14, { alert: 20 });
+  const elena = G.combat.spawnAlly(G.player.x - 3, G.player.z - 3);
+  const gunman = G.combat.enemies[0];
+  let fired = false;
+  for (let i = 0; i < 240 && gunman.hp > 0; i += 1) {
+    G.combat.step(0.016, i * 0.016);
+    fired ||= elena.fireT > 0;
+  }
+  assert.equal(fired, true);
+  assert.ok(gunman.hp < 60, 'ally rounds land');
+  assert.equal(G.police.heat, 0, 'ally fire never raises the wanted level');
+  G.combat.removeAlly();
+  assert.equal(G.combat.ally, null);
+  G.combat.shoot(0, 1.4, 0, 0, WEAPONS[2], 'player', null);
+  assert.ok(G.combat.shotT > 0);
+});
+
+test('#29 main.js registers resize only with a renderer and imports in module-plan order', () => {
+  const src = readFileSync(new URL('../game/src/main.js', import.meta.url), 'utf8');
+  assert.match(src, /^if \(renderer\) window\.addEventListener\('resize', layout\);$/m);
+  assert.match(src, /function layout\(\) \{\n  if \(!renderer\) return;/);
+  assert.doesNotMatch(src, /^window\.addEventListener\('resize'/m);
+  const order = [...src.matchAll(/^import .* from '\.\/(\w+)\.js';$/gm)].map((m) => m[1]);
+  assert.deepEqual(order.slice(0, 11), ['config', 'crew', 'progression', 'atlas', 'missions', 'police', 'vehicles', 'combat', 'player', 'activities', 'hud']);
 });

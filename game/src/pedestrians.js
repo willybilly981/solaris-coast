@@ -144,8 +144,8 @@ export function createHumanoid({ shirt = '#e85d75', pants = '#2b3a55', skin = '#
   return g;
 }
 
-/** Stride with knee and elbow bend; aiming raises both arms into a two-handed hold. */
-export function animateHumanoid(h, speed, t, aiming) {
+/** Stride with knee and elbow bend; aiming raises both arms into a two-handed hold, handsUp into a panicked wave. */
+export function animateHumanoid(h, speed, t, aiming, handsUp = false) {
   const u = h.userData;
   const amp = Math.min(1, speed / 3);
   const ph = t * Math.min(12, 4 + speed * 1.6) + u.phase;
@@ -155,6 +155,14 @@ export function animateHumanoid(h, speed, t, aiming) {
   u.legR.rotation.x = -s * 0.85;
   u.shinL.rotation.x = Math.max(0, -c) * 1.05;
   u.shinR.rotation.x = Math.max(0, c) * 1.05;
+  if (handsUp) {
+    const wave = Math.sin(t * 9 + u.phase) * 0.14;
+    u.armL.rotation.set(-2.75 + wave, 0, 0.32);
+    u.armR.rotation.set(-2.75 - wave, 0, -0.32);
+    u.foreL.rotation.x = -0.22;
+    u.foreR.rotation.x = -0.22;
+    return;
+  }
   if (aiming) {
     u.armR.rotation.set(-1.42, 0, -0.04);
     u.foreR.rotation.x = -0.12;
@@ -209,10 +217,13 @@ export function createPeds(G) {
     else p.z = q.line;
   }
 
+  /** Everyone in range flees; those right next to the noise freeze, hands up, and back away instead of sprinting. */
   P.alarm = (x, z, radius) => {
     for (const p of list) {
-      if (p.state === 'dead' || Math.hypot(p.x - x, p.z - z) > radius) continue;
+      const d = Math.hypot(p.x - x, p.z - z);
+      if (p.state === 'dead' || d > radius) continue;
       p.state = 'flee';
+      p.handsUp = d < radius * 0.4 && rng.chance(0.6);
       p.fleeT = rng.range(5, 9);
       const away = p.axis === 'z' ? p.z - z : p.x - x;
       p.dir = away >= 0 ? 1 : -1;
@@ -222,6 +233,7 @@ export function createPeds(G) {
   P.kill = (p, byPlayer) => {
     if (p.state === 'dead') return;
     p.state = 'dead';
+    p.handsUp = false;
     p.dead = 0;
     G.combat.spawnPickup('cash', p.x, p.z, p.cash);
     if (byPlayer) G.police.addHeat(12, 'civilian down');
@@ -238,7 +250,7 @@ export function createPeds(G) {
   };
 
   function walk(p, dt) {
-    const speed = p.state === 'flee' ? 6.2 : p.speed;
+    const speed = p.state === 'flee' ? (p.handsUp ? 4.4 : 6.2) : p.speed;
     const c = p.axis === 'z' ? p.z : p.x;
     const next = c + p.dir * speed * dt;
     const crossings = p.axis === 'z' ? ROADS.z : ROADS.x;
@@ -279,7 +291,7 @@ export function createPeds(G) {
   }
 
   P.step = (dt, t) => {
-    if (list.length < 30 && rng.chance(0.35)) spawnNear();
+    if (list.length < 46 && rng.chance(0.5)) spawnNear();
     for (let i = list.length - 1; i >= 0; i -= 1) {
       const p = list[i];
       const far = Math.hypot(p.x - G.player.x, p.z - G.player.z);
@@ -297,7 +309,10 @@ export function createPeds(G) {
       }
       if (p.state === 'flee') {
         p.fleeT -= dt;
-        if (p.fleeT <= 0) p.state = 'walk';
+        if (p.fleeT <= 0) {
+          p.state = 'walk';
+          p.handsUp = false;
+        }
       }
       walk(p, dt);
       for (const v of G.vehicles.list) {
@@ -311,7 +326,7 @@ export function createPeds(G) {
       const heading = p.axis === 'z' ? (p.dir > 0 ? 0 : Math.PI) : p.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
       p.mesh.position.set(p.x, 0.2, p.z);
       p.mesh.rotation.y = heading;
-      animateHumanoid(p.mesh, p.state === 'flee' ? 6 : p.speed, t, false);
+      animateHumanoid(p.mesh, p.state === 'flee' ? 6 : p.speed, t, false, p.handsUp);
     }
   };
 
