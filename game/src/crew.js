@@ -68,13 +68,21 @@ const PORTRAITS = {
   ],
 };
 
-/** Inline SVG markup, 64x64, for a speaker id (kai, sofia, marco, elena, harper). */
-export function getSpeakerPortrait(id) {
-  const [top, bottom, body] = PORTRAITS[id]();
-  const g = `pg-${id}`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="${SPEAKERS[id].name}">`
-    + `<defs><linearGradient id="${g}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${top}"/><stop offset="1" stop-color="${bottom}"/></linearGradient></defs>`
-    + `<rect width="64" height="64" rx="8" fill="url(#${g})"/>${body}</svg>`;
+const portraitCache = new Map();
+
+/**
+ * Inline SVG markup, 64x64, for a speaker id (kai, sofia, marco, elena, harper). `scope` keeps the gradient id
+ * unique per place on the page: a duplicate id inside a hidden panel would blank the visible copies.
+ */
+export function getSpeakerPortrait(id, scope = '') {
+  const g = `pg-${scope}${id}`;
+  if (!portraitCache.has(g)) {
+    const [top, bottom, body] = PORTRAITS[id]();
+    portraitCache.set(g, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="${SPEAKERS[id].name}">`
+      + `<defs><linearGradient id="${g}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${top}"/><stop offset="1" stop-color="${bottom}"/></linearGradient></defs>`
+      + `<rect width="64" height="64" rx="8" fill="url(#${g})"/>${body}</svg>`);
+  }
+  return portraitCache.get(g);
 }
 
 export function createCrewState() {
@@ -132,7 +140,7 @@ export function getCrewCards(G) {
     return {
       slot: c.slot, id: c.id, name: SPEAKERS[c.id].name, skill: c.skill, active,
       ready: left <= 0, secs: Math.ceil(left), pct: left / c.cd, label: left <= 0 ? 'READY' : `${Math.ceil(left)}s`,
-      portrait: getSpeakerPortrait(c.id),
+      portrait: getSpeakerPortrait(c.id, 'hud-'),
     };
   });
 }

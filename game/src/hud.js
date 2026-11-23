@@ -198,7 +198,7 @@ export function createHud(G) {
 
   function dialogueHtml(line) {
     const sp = SPEAKERS[line[0]];
-    return `<div class="dPort">${getSpeakerPortrait(line[0])}</div><div class="dTxt"><div class="dWho"><b style="color:${sp.color}">${sp.name}</b><em>${sp.role}</em></div><p>${line[1]}</p></div>`;
+    return `<div class="dPort">${getSpeakerPortrait(line[0], 'say-')}</div><div class="dTxt"><div class="dWho"><b style="color:${sp.color}">${sp.name}</b><em>${sp.role}</em></div><p>${line[1]}</p></div>`;
   }
 
   function drawMarks() {

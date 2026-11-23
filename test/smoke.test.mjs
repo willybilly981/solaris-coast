@@ -84,8 +84,8 @@ const { createActivities, GARAGE_SERVICES } = await import('../game/src/activiti
 const { createSave } = await import('../game/src/save.js');
 const { createAudio } = await import('../game/src/audio.js');
 const { CREW, SPEAKERS, createCrewState, getCrewCards, getSpeakerPortrait, tickCrew, triggerCrewAbility } = await import('../game/src/crew.js');
-const { RANKS, RELIC_SPOTS, WEIGHTS, computeCompletion, createProgress, getRankInfo, gradeMission, weaponUnlocked } = await import('../game/src/progression.js');
-const { getAtlasState, planRoute } = await import('../game/src/atlas.js');
+const { RANKS, RELIC_SPOTS, WEIGHTS, computeCompletion, createProgress, getRankInfo, gradeMission, normalizeProgress, weaponUnlocked } = await import('../game/src/progression.js');
+const { buildStaticMap, currentRoute, getAtlasState, planRoute } = await import('../game/src/atlas.js');
 const { updateTelemetry } = await import('../game/src/vehicles.js');
 const { STATE_COLORS, getChaseStatus, getTacticalUnits } = await import('../game/src/police.js');
 const { animateHumanoid, createHumanoid, createPeds } = await import('../game/src/pedestrians.js');
@@ -652,4 +652,134 @@ test('#29 main.js registers resize only with a renderer and imports in module-pl
   assert.doesNotMatch(src, /^window\.addEventListener\('resize'/m);
   const order = [...src.matchAll(/^import .* from '\.\/(\w+)\.js';$/gm)].map((m) => m[1]);
   assert.deepEqual(order.slice(0, 11), ['config', 'crew', 'progression', 'atlas', 'missions', 'police', 'vehicles', 'combat', 'player', 'activities', 'hud']);
+});
+
+test('#30 portrait gradient ids are unique per place and the markup is cached', () => {
+  const gradientId = (svg) => /<linearGradient id="([^"]+)"/.exec(svg)[1];
+  const hud = getSpeakerPortrait('elena', 'hud-');
+  assert.notEqual(gradientId(hud), gradientId(getSpeakerPortrait('elena', 'atlas-')));
+  assert.notEqual(gradientId(hud), gradientId(getSpeakerPortrait('elena')));
+  assert.equal(getSpeakerPortrait('elena', 'hud-'), hud, 'same string back, no rebuild per frame');
+  for (const c of getCrewCards(makeG())) assert.match(gradientId(c.portrait), /^pg-hud-/);
+});
+
+test('#31 player.reset leaves the car and clears the chase', () => {
+  const G = makeG();
+  const v = G.vehicles.spawn('solara', 141, 22, 0);
+  G.player.enter(v);
+  G.police.setStars(3);
+  G.player.hp = 10;
+  G.player.wasted = true;
+  G.player.reset();
+  assert.equal(G.player.inVehicle, false);
+  assert.equal(v.driver, null);
+  assert.equal(G.police.stars, 0);
+  assert.deepEqual([G.player.hp, G.player.wasted], [100, false]);
+});
+
+test('#32 main.js resets and drops stale keys on every career start, and asks before erasing a slot', () => {
+  const src = readFileSync(new URL('../game/src/main.js', import.meta.url), 'utf8');
+  assert.match(src, /function begin\(slot, fresh\) \{\n    selected = slot;\n    G\.audio\.unlock\(\);\n    input\.clearEdges\(\);\n    G\.player\.reset\(\);\n    if \(fresh\) \{/);
+  assert.equal(src.match(/G\.player\.reset\(\)/g).length, 1, 'one reset, shared by new and loaded careers');
+  assert.match(src, /if \(input\.take\('KeyN'\)\) newCareer\(\);\n      input\.clearEdges\(\);/);
+  assert.match(src, /btnNew\.onclick = newCareer;/);
+  assert.equal(src.match(/begin\(selected, true\)/g).length, 1, 'only newCareer erases the selected slot');
+});
+
+test('#33 activities state is a copy and load always starts from a clean record', () => {
+  const G = makeG();
+  G.activities.respect.crown = 50;
+  const saved = G.activities.state();
+  G.activities.respect.crown = 99;
+  assert.equal(saved.respect.crown, 50, 'a stored snapshot must not follow live respect');
+  G.activities.load({ respect: { mirador: 12, crown: '7' }, stuntBest: 'x' });
+  assert.deepEqual(G.activities.respect, { mirador: 12, crown: 0, harbor: 0, palma: 0 });
+  assert.equal(G.activities.stuntBest, 0);
+  G.activities.stuntBest = 40;
+  G.activities.load(undefined);
+  assert.deepEqual([...Object.values(G.activities.respect), G.activities.stuntBest], [0, 0, 0, 0, 0]);
+});
+
+test('#34 stored progress keeps only real grades and non-negative numbers', () => {
+  const p = normalizeProgress({ grades: { m1: '<img src=x onerror=1>', m2: 'S', m3: 'toString', m4: ['G'] }, rp: -50, races: -1, stats: { distance: -9 } });
+  assert.deepEqual(p.grades, { m2: 'S' });
+  assert.deepEqual([p.rp, p.races, p.stats.distance], [0, 0, 0]);
+});
+
+test('#35 slot timestamps resolve to the second so Continue picks the newer save', () => {
+  const RealDate = Date;
+  let now = RealDate.parse('2026-01-01T10:00:05Z');
+  globalThis.Date = class extends RealDate {
+    constructor(...a) {
+      super(...(a.length ? a : [now]));
+    }
+  };
+  try {
+    const G = makeG();
+    const first = G.save.snapshot().when;
+    now += 45000;
+    const second = G.save.snapshot().when;
+    assert.equal(first, '2026-01-01 10:00:05');
+    assert.ok(second > first, `${second} must sort after ${first}`);
+  } finally {
+    globalThis.Date = RealDate;
+  }
+});
+
+test('#36 ammo and armor pickups expire like cash', () => {
+  const G = makeG();
+  G.combat.spawnPickup('ammo', 1000, 1000, 5);
+  G.combat.spawnPickup('armor', 1000, 1010, 5);
+  const before = G.scene.children.length;
+  G.combat.step(100, 0);
+  assert.equal(G.combat.pickups.length, 2, 'still lying around after 100 s');
+  G.combat.step(21, 0);
+  assert.equal(G.combat.pickups.length, 0);
+  assert.equal(G.scene.children.length, before - 2);
+});
+
+test('#37 abandoned cars out of sight are capped, oldest first', () => {
+  const G = makeG();
+  const far = Array.from({ length: 25 }, (_, i) => G.vehicles.spawn('solara', 400 + i * 6, 22, 0, { owner: 'parked' }));
+  for (const v of far) v.abandoned = true;
+  const mine = G.vehicles.spawn('solara', G.player.x, G.player.z, 0);
+  G.player.enter(mine);
+  G.player.exit(true);
+  const left = G.vehicles.list.filter((v) => v.abandoned);
+  assert.equal(left.length, 21, '20 out of sight plus the car just left');
+  assert.equal(G.vehicles.list.includes(far[0]), false);
+  assert.equal(G.vehicles.list.includes(far[24]), true);
+  assert.equal(G.vehicles.list.includes(mine), true);
+  G.player.enter(mine);
+  assert.equal(mine.abandoned, false, 'driving it again clears the mark');
+});
+
+test('#38 the route is kept while the target only drifts', () => {
+  const G = makeG();
+  G.waypoint = { x: -20, z: 150 };
+  const first = currentRoute(G);
+  G.waypoint = { x: -19.5, z: 150.4 };
+  assert.equal(currentRoute(G), first, 'half a metre does not re-plan');
+  G.waypoint = { x: -20, z: 140 };
+  assert.notEqual(currentRoute(G), first, 'ten metres does');
+});
+
+test('#39 the city bitmap is painted once and shared', () => {
+  assert.equal(buildStaticMap(), buildStaticMap());
+});
+
+test('#40 a stunt pays only for the car that launched', () => {
+  const G = makeG();
+  const a = G.vehicles.spawn('solara', 0, 0, 0);
+  const b = G.vehicles.spawn('solara', 0, 0, 0);
+  a.driver = 'player';
+  b.driver = 'player';
+  G.activities.onLaunch(a);
+  b.x = 50;
+  G.activities.onLand(b);
+  assert.equal(G.player.cash, 1500, 'another car landing far away earns nothing');
+  a.x = 30;
+  G.activities.onLand(a);
+  assert.equal(G.player.cash, 1500 + 30 * 8);
+  assert.equal(G.activities.stuntBest, 30);
 });

@@ -34,12 +34,13 @@ const GRADE_RP = { G: 100, S: 50, B: 0 };
 /** Coerces untrusted save data (localStorage can hold anything) into a well-formed progress record. */
 export function normalizeProgress(s) {
   const d = s && typeof s === 'object' ? s : {};
-  const n = (v) => (Number.isFinite(v) ? v : 0);
+  const n = (v) => (Number.isFinite(v) ? Math.max(0, v) : 0);
   const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? { ...v } : {});
+  const grades = Object.fromEntries(Object.entries(obj(d.grades)).filter(([, g]) => typeof g === 'string' && Object.hasOwn(GRADE_RP, g)));
   const ids = (v, ok) => (Array.isArray(v) ? [...new Set(v.filter((x) => ok.includes(x)))] : []);
   const st = obj(d.stats);
   return {
-    rp: n(d.rp), relics: ids(d.relics, RELIC_SPOTS.map((r) => r.id)), grades: obj(d.grades), garage: obj(d.garage),
+    rp: n(d.rp), relics: ids(d.relics, RELIC_SPOTS.map((r) => r.id)), grades, garage: obj(d.garage),
     explored: ids(d.explored, DISTRICTS.map((x) => x.id)), races: n(d.races), stunts: n(d.stunts), evades: n(d.evades),
     stats: { distance: n(st.distance), topSpeed: n(st.topSpeed), takedowns: n(st.takedowns), maxHeat: n(st.maxHeat), earned: n(st.earned) },
   };

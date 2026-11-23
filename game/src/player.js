@@ -4,6 +4,8 @@ import { newWeaponState } from './combat.js';
 import { animateHumanoid, createHumanoid } from './pedestrians.js';
 import { weaponUnlocked } from './progression.js';
 
+const MAX_ABANDONED = 20;
+
 export function createPlayer(G) {
   const mesh = createHumanoid({ shirt: '#ff7a3a', pants: '#1d2a44', skin: '#d9a77b', hair: '#1a100a', gun: true, kind: 'hero' });
   G.scene.add(mesh);
@@ -14,6 +16,8 @@ export function createPlayer(G) {
   };
 
   P.reset = () => {
+    if (P.inVehicle) P.exit(true);
+    G.police.clear();
     P.hp = 100;
     P.armor = 0;
     P.weapons = newWeaponState();
@@ -85,6 +89,7 @@ export function createPlayer(G) {
     v.ai = null;
     v.driver = 'player';
     v.owner = 'player';
+    v.abandoned = false;
     v.sleep = false;
     P.inVehicle = true;
     P.vehicle = v;
@@ -104,11 +109,19 @@ export function createPlayer(G) {
     P.camYaw = v.heading;
     v.driver = null;
     v.owner = 'parked';
+    v.abandoned = true;
     v.input = { throttle: 0, brake: 0.5, steer: 0, hand: false, nitro: false };
     P.inVehicle = false;
     P.vehicle = null;
     mesh.visible = true;
+    pruneAbandoned(v);
   };
+
+  // nothing else removes parked cars, so keep the 20 newest abandoned ones that are out of sight
+  function pruneAbandoned(keep) {
+    const stale = G.vehicles.list.filter((o) => o.abandoned && o !== keep && o !== G.missions.target && Math.hypot(o.x - P.x, o.z - P.z) > 100);
+    for (const o of stale.slice(0, Math.max(0, stale.length - MAX_ABANDONED))) G.vehicles.remove(o);
+  }
 
   function selectWeapon(i) {
     if (i === P.weapon) return;

@@ -268,7 +268,7 @@ export function createCombat(G) {
     const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: G.glowTex, color: PK[kind], transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false }));
     halo.scale.set(2.4, 2.4, 1);
     m.add(halo);
-    C.pickups.push({ kind, x, z, value, m, t: rng.range(0, 6), life: kind === 'cash' ? 40 : 1e9 });
+    C.pickups.push({ kind, x, z, value, m, t: rng.range(0, 6), life: kind === 'cash' ? 40 : 120 });
   };
 
   function targets(faction) {

@@ -54,10 +54,10 @@ export function createActivities(G) {
   };
 
   A.onLaunch = (v) => {
-    if (v.driver === 'player') A.launch = { x: v.x, z: v.z };
+    if (v.driver === 'player') A.launch = { v, x: v.x, z: v.z };
   };
   A.onLand = (v) => {
-    if (v.driver !== 'player' || !A.launch) return;
+    if (v.driver !== 'player' || !A.launch || A.launch.v !== v) return;
     const d = Math.hypot(v.x - A.launch.x, v.z - A.launch.z);
     A.launch = null;
     if (d < 9) return;
@@ -228,11 +228,10 @@ export function createActivities(G) {
     }
   }
 
-  A.state = () => ({ respect: A.respect, stuntBest: A.stuntBest });
+  A.state = () => ({ respect: { ...A.respect }, stuntBest: A.stuntBest });
   A.load = (s) => {
-    if (!s) return;
-    Object.assign(A.respect, s.respect || {});
-    A.stuntBest = s.stuntBest || 0;
+    for (const d of DISTRICTS) A.respect[d.id] = Number.isFinite(s?.respect?.[d.id]) ? s.respect[d.id] : 0;
+    A.stuntBest = Number.isFinite(s?.stuntBest) ? s.stuntBest : 0;
   };
   A.prompt = () => {
     if (A.garage.open) return '';

@@ -19,7 +19,11 @@ export const SERVICE_MARKERS = [
   ...VEHICLE_SPAWNS.map((v) => [v, 'V', '#ffa84a']),
 ];
 
+let mapBitmap = null;
+
+/** Painted once; the HUD minimap and the atlas read the same bitmap. */
 export function buildStaticMap() {
+  if (mapBitmap) return mapBitmap;
   const c = document.createElement('canvas');
   c.width = MAP_PX;
   c.height = MAP_PX;
@@ -72,6 +76,7 @@ export function buildStaticMap() {
     g.stroke();
   }
   g.setLineDash([]);
+  mapBitmap = c;
   return c;
 }
 
@@ -153,7 +158,7 @@ export function currentRoute(G) {
   if (!tg) return null;
   const c = G.routeCache;
   const moved = c ? Math.hypot(G.player.x - c.px, G.player.z - c.pz) : 1e9;
-  if (!c || moved > 4 || c.tx !== tg.x || c.tz !== tg.z) {
+  if (!c || moved > 4 || Math.hypot(c.tx - tg.x, c.tz - tg.z) > 4) {
     G.routeCache = { px: G.player.x, pz: G.player.z, tx: tg.x, tz: tg.z, route: planRoute(G.player, tg) };
   }
   return G.routeCache.route;
@@ -310,8 +315,8 @@ export function createAtlas(G) {
   }
 
   function crewTab() {
-    const cards = CREW.map((c) => `<div class="ccard"><div class="cport">${getSpeakerPortrait(c.id)}</div><div><b>${SPEAKERS[c.id].name}</b><small>${SPEAKERS[c.id].role}</small><span><kbd>${c.slot}</kbd>${c.skill}</span><em>${CREW_BLURB[c.slot]}</em><em>COOLDOWN ${c.cd}S</em></div></div>`);
-    const others = ['kai', 'harper'].map((id) => `<div class="ccard"><div class="cport">${getSpeakerPortrait(id)}</div><div><b>${SPEAKERS[id].name}</b><small>${SPEAKERS[id].role}</small></div></div>`);
+    const cards = CREW.map((c) => `<div class="ccard"><div class="cport">${getSpeakerPortrait(c.id, 'atlas-')}</div><div><b>${SPEAKERS[c.id].name}</b><small>${SPEAKERS[c.id].role}</small><span><kbd>${c.slot}</kbd>${c.skill}</span><em>${CREW_BLURB[c.slot]}</em><em>COOLDOWN ${c.cd}S</em></div></div>`);
+    const others = ['kai', 'harper'].map((id) => `<div class="ccard"><div class="cport">${getSpeakerPortrait(id, 'atlas-')}</div><div><b>${SPEAKERS[id].name}</b><small>${SPEAKERS[id].role}</small></div></div>`);
     return `<div class="agrid one"><section class="ap"><h3>CREW AND CONTACTS</h3><div class="ccards">${[...cards, ...others].join('')}</div></section></div>`;
   }
 

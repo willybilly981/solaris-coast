@@ -307,10 +307,11 @@ function runGame() {
   function begin(slot, fresh) {
     selected = slot;
     G.audio.unlock();
+    input.clearEdges();
+    G.player.reset();
     if (fresh) {
       G.save.fresh(slot);
       G.player.cash = 1500;
-      G.player.reset();
       G.missions.reset(0);
       G.activities.load({ respect: { mirador: 0, crown: 0, harbor: 0, palma: 0 }, stuntBest: 0 });
       G.progress.load(null);
@@ -339,7 +340,22 @@ function runGame() {
     const n = newest();
     begin(n < 0 ? 0 : n, n < 0);
   };
-  G.hud.btnNew.onclick = () => begin(selected, true);
+  // a saved slot is erased only by a second press within 3 s
+  let eraseUntil = 0;
+  const newCareer = () => {
+    const label = G.hud.btnNew;
+    if (G.save.slots()[selected] && performance.now() > eraseUntil) {
+      eraseUntil = performance.now() + 3000;
+      label.textContent = `ERASE SLOT ${selected + 1}? AGAIN`;
+      setTimeout(() => {
+        label.textContent = 'NEW CAREER';
+      }, 3000);
+      return;
+    }
+    label.textContent = 'NEW CAREER';
+    begin(selected, true);
+  };
+  G.hud.btnNew.onclick = newCareer;
   // the title previews the newest career, so the atlas shows real saved progress
   const openAtlas = (tab) => {
     if (document.pointerLockElement) document.exitPointerLock();
@@ -390,7 +406,8 @@ function runGame() {
         const n = newest();
         begin(n < 0 ? selected : n, n < 0);
       }
-      if (input.take('KeyN')) begin(selected, true);
+      if (input.take('KeyN')) newCareer();
+      input.clearEdges();
       acc += dt;
       while (acc >= STEP) {
         sim(STEP, IDLE, false);

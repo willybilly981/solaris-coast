@@ -32,7 +32,7 @@ export function createSave(G) {
   const S = { slot: 0 };
   S.slots = () => [0, 1, 2].map(read);
   S.snapshot = () => ({
-    when: new Date().toISOString().slice(0, 16).replace('T', ' '),
+    when: new Date().toISOString().slice(0, 19).replace('T', ' '),
     cash: G.player.cash,
     missions: G.missions.done,
     where: districtAt(G.player.x, G.player.z),
