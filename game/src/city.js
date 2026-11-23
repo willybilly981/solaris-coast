@@ -52,9 +52,9 @@ function makeMaterials() {
   return m;
 }
 
-export function buildCity(scene, rng) {
+export function buildCity(scene, rng, glowTex) {
   const mats = makeMaterials();
-  const city = { colliders: [], grid: new Map(), ramps: RAMPS, neon: [], lamps: [], mats, update: null };
+  const city = { colliders: [], grid: new Map(), ramps: RAMPS, neon: [], mats, update: null };
   const batches = new Map();
   const palms = [];
   const root = new THREE.Group();
@@ -99,7 +99,7 @@ export function buildCity(scene, rng) {
     root.add(halo);
     city.neon.push({ mat, halo, phase: rng.range(0, 6) });
   };
-  city.glow = TX.glowTexture();
+  city.glow = glowTex || TX.glowTexture();
 
   // ---- roads ----
   const roadPos = [];
@@ -149,7 +149,7 @@ export function buildCity(scene, rng) {
   outskirts.receiveShadow = true;
   root.add(outskirts);
 
-  const oceanGeo = new THREE.PlaneGeometry(900, 900, 110, 110);
+  const oceanGeo = new THREE.PlaneGeometry(900, 900, 56, 56);
   oceanGeo.rotateX(-Math.PI / 2);
   const oceanTex = TX.oceanTexture();
   oceanTex.repeat.set(60, 60);
@@ -532,8 +532,8 @@ export function buildCity(scene, rng) {
       const b = (s + 1) / segs;
       const f = (t) => [Math.sin(t * 2.6) * 0.5 * 4.6, -t * t * 1.7 + t * 1.2, t * 4.6];
       const w = (t) => 0.9 * (1 - t) + 0.05;
-      const [ax, ay, az] = f(a);
-      const [bx, by, bz] = f(b);
+      const [, ay, az] = f(a);
+      const [, by, bz] = f(b);
       pos.push(-w(a), ay, az, w(a), ay, az, -w(b), by, bz, w(a), ay, az, w(b), by, bz, -w(b), by, bz);
     }
     leaf.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));

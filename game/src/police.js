@@ -13,6 +13,12 @@ const beamMaterial = (alpha, power) => new THREE.ShaderMaterial({
     void main(){ float f = pow(abs(dot(normalize(vN), normalize(vV))), uPow); gl_FragColor = vec4(uColor, uAlpha * f * (0.4 + 0.6 * vT)); }`,
 });
 
+const vWant = new THREE.Vector3();
+const vFrom = new THREE.Vector3();
+const vTo = new THREE.Vector3();
+const vDir = new THREE.Vector3();
+const vMid = new THREE.Vector3();
+const vUp = new THREE.Vector3(0, 1, 0);
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const DISPATCH = [
   null,
@@ -25,7 +31,7 @@ const DISPATCH = [
 
 export function createPolice(G) {
   const rng = G.rng;
-  const P = { heat: 0, stars: 0, officers: [], log: [], blocks: [], heli: null, seen: false, seenT: 0, forced: false, clock: 0, arrestT: 0, cooldown: 0, units: [] };
+  const P = { heat: 0, stars: 0, officers: [], log: [], blocks: [], heli: null, seen: false, seenT: 0, forced: false, clock: 0, arrestT: 0, cooldown: 0 };
 
   P.radio = (text) => {
     P.log.push({ text, t: P.clock });
@@ -84,7 +90,13 @@ export function createPolice(G) {
     } else if (byPlayer) P.addHeat(10, 'assault on officer');
   };
 
-  P.onRam = () => {};
+  let lastRam = -9;
+  P.onRam = (a, b) => {
+    if ((a.driver === 'player' || b.driver === 'player') && P.clock - lastRam > 1.2) {
+      lastRam = P.clock;
+      P.addHeat(10);
+    }
+  };
 
   function roadPoint(min, max, tries = 16) {
     for (let k = 0; k < tries; k += 1) {
@@ -98,7 +110,7 @@ export function createPolice(G) {
       const along = pc + rng.sign() * Math.sqrt(d * d - off * off);
       const x = axis === 'z' ? c : along;
       const z = axis === 'z' ? along : c;
-      if (x < WORLD.minX + 8 || x > 128 || z < WORLD.minZ + 8 || z > WORLD.maxZ - 8) continue;
+      if (x < WORLD.minX + 8 || x > 138 || z < WORLD.minZ + 8 || z > WORLD.maxZ - 8) continue;
       const crossing = (axis === 'z' ? ROADS.z : ROADS.x).some((r) => Math.abs(r - along) < 14);
       if (crossing) continue;
       if (G.vehicles.list.some((o) => Math.hypot(o.x - x, o.z - z) < 9)) continue;
@@ -145,6 +157,10 @@ export function createPolice(G) {
       inp.brake = 1;
       if (!v.exited && Math.hypot(v.vx, v.vz) < 3) {
         v.exited = true;
+        v.ai = null;
+        v.driver = null;
+        inp.throttle = 0;
+        inp.brake = 1;
         P.spawnOfficer(v.x + 2, v.z, 'patrol');
         P.spawnOfficer(v.x - 2, v.z + 1, 'patrol');
       }
@@ -183,7 +199,7 @@ export function createPolice(G) {
 
   P.spawnOfficer = (x, z, type) => {
     const tac = type === 'tactical';
-    const mesh = createHumanoid({ shirt: tac ? '#1c2230' : '#2c4a8a', pants: tac ? '#161a24' : '#1b2a52', skin: rng.pick(['#e9b88f', '#b57a54']), hair: '#111', hat: tac ? '#10131b' : '#1b2a52', gun: true, kind: tac ? 'swat' : 'cop' });
+    const mesh = createHumanoid({ shirt: tac ? '#1c2230' : '#2c4a8a', pants: tac ? '#161a24' : '#1b2a52', skin: rng.pick(['#e9b88f', '#b57a54']), hair: '#111', hat: tac ? '#10131b' : '#1b2a52', gun: true, kind: tac ? 'swat' : 'cop', phase: rng.range(0, 6) });
     G.scene.add(mesh);
     const o = { mesh, x, z, hp: tac ? 110 : 55, type, dir: 0, cd: rng.range(0.4, 1.2), alert: 8, dead: -1, strafe: rng.sign(), t: 0, hold: 0 };
     P.officers.push(o);
@@ -191,7 +207,6 @@ export function createPolice(G) {
   };
 
   function spawnBlock() {
-    const pl = G.player;
     const pt = roadPoint(100, 140);
     if (!pt) return;
     const sign = rng.sign();
@@ -212,7 +227,6 @@ export function createPolice(G) {
     P.spawnOfficer(bx + back[0] - 1, bz + back[1], 'tactical').hold = 1;
     P.blocks.push({ cars, x: bx, z: bz, done: false });
     P.radio('Dispatch: roadblock established ahead.');
-    return pl;
   }
 
   function buildHeli() {
@@ -287,7 +301,21 @@ export function createPolice(G) {
       G.audio.heli(true);
     } else if (!on && P.heli) {
       const h = P.heli;
-      for (const o of [h.g, h.spot, h.spot.target, h.beam, h.spotDisc]) G.scene.remove(o);
+      const geos = new Set();
+      const mats = new Set();
+      const maps = new Set();
+      for (const root of [h.g, h.spot, h.spot.target, h.beam, h.spotDisc]) {
+        G.scene.remove(root);
+        root.traverse((o) => {
+          if (o.geometry && !o.isSprite) geos.add(o.geometry);
+          if (!o.material) return;
+          for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+            mats.add(m);
+            if (m.map) maps.add(m.map);
+          }
+        });
+      }
+      for (const r of [...geos, ...mats, ...maps]) r.dispose();
       P.heli = null;
       G.audio.heli(false);
     }
@@ -299,8 +327,7 @@ export function createPolice(G) {
     h.a += dt * 0.32;
     const px = G.player.x;
     const pz = G.player.z;
-    const want = new THREE.Vector3(px + Math.cos(h.a) * 15, 34 + Math.sin(t * 0.7) * 1.2, pz + Math.sin(h.a) * 15);
-    h.pos.lerp(want, Math.min(1, dt * 1.4));
+    h.pos.lerp(vWant.set(px + Math.cos(h.a) * 15, 34 + Math.sin(t * 0.7) * 1.2, pz + Math.sin(h.a) * 15), Math.min(1, dt * 1.4));
     h.g.position.copy(h.pos);
     h.g.rotation.y = -h.a + 0.2;
     h.g.rotation.z = Math.sin(t * 0.9) * 0.04;
@@ -308,15 +335,15 @@ export function createPolice(G) {
     h.tail.rotation.x += dt * 50;
     h.aim.x += (px - h.aim.x) * Math.min(1, dt * 2.4);
     h.aim.z += (pz - h.aim.z) * Math.min(1, dt * 2.4);
-    const from = new THREE.Vector3(h.pos.x, h.pos.y - 1.2, h.pos.z);
-    const to = new THREE.Vector3(h.aim.x, 0.25, h.aim.z);
+    const from = vFrom.set(h.pos.x, h.pos.y - 1.2, h.pos.z);
+    const to = vTo.set(h.aim.x, 0.25, h.aim.z);
     h.spot.position.copy(from);
     h.spot.target.position.copy(to);
-    const dir = from.clone().sub(to);
+    const dir = vDir.copy(from).sub(to);
     const len = dir.length();
-    h.beam.position.copy(from.clone().add(to).multiplyScalar(0.5));
+    h.beam.position.copy(vMid.copy(from).add(to).multiplyScalar(0.5));
     h.beam.scale.set(1, len, 1);
-    h.beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+    h.beam.quaternion.setFromUnitVectors(vUp, dir.normalize());
     h.spotDisc.position.set(to.x, 0.32, to.z);
     if (Math.hypot(h.aim.x - px, h.aim.z - pz) < 9) P.seenT = 0;
   }

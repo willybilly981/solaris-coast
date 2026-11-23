@@ -31,12 +31,17 @@ const seed = Number.isInteger(seedParam) ? seedParam : Math.floor(Math.random() 
 
 const canvas = document.getElementById('game');
 const statusEl = document.getElementById('status');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(shot ? 1 : Math.min(window.devicePixelRatio || 1, 1.5));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+let renderer = null;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(shot ? 1 : Math.min(window.devicePixelRatio || 1, 1.5));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+} catch {
+  renderer = null;
+}
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog('#ffb585', 150, 760);
@@ -84,6 +89,7 @@ try {
   envScene.add(new THREE.Mesh(sky.geometry, sky.material));
   scene.environment = pm.fromScene(envScene, 0.02).texture;
   scene.environmentIntensity = 0.7;
+  pm.dispose();
 } catch {
   scene.environment = null;
 }
@@ -95,7 +101,7 @@ G.shake = (m) => {
   G.shakeMag = Math.max(G.shakeMag, m);
 };
 G.audio = createAudio();
-G.city = buildCity(scene, rng);
+G.city = buildCity(scene, rng, glowTex);
 G.fx = createFx(G, glowTex);
 G.vehicles = createVehicles(G);
 G.peds = createPeds(G);
@@ -164,10 +170,14 @@ function layout() {
 }
 window.addEventListener('resize', layout);
 
+const vFwd = new THREE.Vector3();
+const vWant = new THREE.Vector3();
+const vLook = new THREE.Vector3();
+const vShake = new THREE.Vector3();
+
 function render() {
   sky.position.copy(camera.position);
-  const f = new THREE.Vector3();
-  camera.getWorldDirection(f);
+  const f = camera.getWorldDirection(vFwd);
   sun.position.set(camera.position.x + f.x * 30 + SUN.x * 260, SUN.y * 260, camera.position.z + f.z * 30 + SUN.z * 260);
   sun.target.position.set(camera.position.x + f.x * 30, 0, camera.position.z + f.z * 30);
   renderer.render(scene, camera);
@@ -210,8 +220,8 @@ function followCamera(dt) {
   const shoulder = v ? 0 : 0.9;
   const rx = Math.cos(p.camYaw) * -shoulder;
   const rz = Math.sin(p.camYaw) * shoulder;
-  const want = new THREE.Vector3(tx + dx * d + rx, baseY + dy * d + (v ? 1.0 : 0.5), tz + dz * d + rz);
-  const look = new THREE.Vector3(tx + Math.sin(p.camYaw) * (v ? 3 : 2) + rx * 0.4, baseY + (v ? 0.4 : 0.35), tz + Math.cos(p.camYaw) * (v ? 3 : 2) + rz * 0.4);
+  const want = vWant.set(tx + dx * d + rx, baseY + dy * d + (v ? 1.0 : 0.5), tz + dz * d + rz);
+  const look = vLook.set(tx + Math.sin(p.camYaw) * (v ? 3 : 2) + rx * 0.4, baseY + (v ? 0.4 : 0.35), tz + Math.cos(p.camYaw) * (v ? 3 : 2) + rz * 0.4);
   if (!camInit) {
     camPos.copy(want);
     camLook.copy(look);
@@ -222,7 +232,7 @@ function followCamera(dt) {
   camLook.lerp(look, 1 - Math.exp(-dt * 14));
   G.shakeMag = Math.max(0, G.shakeMag - dt * 1.6);
   camera.position.copy(camPos);
-  if (G.shakeMag > 0.01) camera.position.add(new THREE.Vector3((Math.random() - 0.5) * G.shakeMag, (Math.random() - 0.5) * G.shakeMag, (Math.random() - 0.5) * G.shakeMag));
+  if (G.shakeMag > 0.01) camera.position.add(vShake.set((rng.next() - 0.5) * G.shakeMag, (rng.next() - 0.5) * G.shakeMag, (rng.next() - 0.5) * G.shakeMag));
   camera.lookAt(camLook);
   const fov = 62 + (v ? Math.min(16, speed * 0.28) + (v.boosting ? 8 : 0) : 0);
   if (Math.abs(camera.fov - fov) > 0.05) {
@@ -371,5 +381,6 @@ function runGame() {
   window.__solaris = G;
 }
 
-if (shot) runShot(shot);
+if (!renderer) announce('WebGL unavailable. Enable WebGL and reload.');
+else if (shot) runShot(shot);
 else runGame();

@@ -86,7 +86,7 @@ export function createFx(G, glow) {
   const soft = makePool(G.scene, 700, false, glow);
   const hot = makePool(G.scene, 900, true, glow);
   const c = new THREE.Color();
-  const rnd = (a) => (Math.random() - 0.5) * a;
+  const rnd = (a) => (G.rng.next() - 0.5) * a;
   const part = (pool, x, y, z, vx, vy, vz, life, s0, s1, color, a, grav = 0, drag = 0) => {
     c.set(color);
     pool.add({ x, y, z, vx, vy, vz, max: life, s0, s1, r: c.r, g: c.g, b: c.b, a, grav, drag });
@@ -110,8 +110,8 @@ export function createFx(G, glow) {
 
   const fx = {
     soft, hot,
-    smoke: (x, y, z, s = 1, dark = false) => part(soft, x + rnd(0.5), y, z + rnd(0.5), rnd(0.8), 1.6 + Math.random(), rnd(0.8), 1.7 + Math.random() * 0.8, 1.2 * s, 4.2 * s, dark ? '#1a1816' : '#9a9690', dark ? 0.7 : 0.45, 0.2, 0.3),
-    fire: (x, y, z) => part(hot, x, y, z, rnd(1.2), 2.4 + Math.random() * 2, rnd(1.2), 0.5 + Math.random() * 0.3, 1.5, 0.3, Math.random() < 0.5 ? '#ff7a1a' : '#ffc23a', 0.95, 0, 0.5),
+    smoke: (x, y, z, s = 1, dark = false) => part(soft, x + rnd(0.5), y, z + rnd(0.5), rnd(0.8), 1.6 + G.rng.next(), rnd(0.8), 1.7 + G.rng.next() * 0.8, 1.2 * s, 4.2 * s, dark ? '#1a1816' : '#9a9690', dark ? 0.7 : 0.45, 0.2, 0.3),
+    fire: (x, y, z) => part(hot, x, y, z, rnd(1.2), 2.4 + G.rng.next() * 2, rnd(1.2), 0.5 + G.rng.next() * 0.3, 1.5, 0.3, G.rng.next() < 0.5 ? '#ff7a1a' : '#ffc23a', 0.95, 0, 0.5),
     // Burning wreck: layered flames (red base, orange body, yellow core), billowing dark smoke, flying embers.
     blaze: (x, y, z, heading, len, k = 1) => {
       const sx = Math.sin(heading);
@@ -122,22 +122,22 @@ export function createFx(G, glow) {
         return [x + sx * u + sz * w, z + sz * u - sx * w];
       };
       let [px, pz] = at();
-      part(hot, px, y + 0.5, pz, rnd(0.8), 1.8 + Math.random() * 2, rnd(0.8), 0.6 + Math.random() * 0.4, 2.4 * k, 0.5, '#ff3a0a', 0.55, 0, 0.5);
+      part(hot, px, y + 0.5, pz, rnd(0.8), 1.8 + G.rng.next() * 2, rnd(0.8), 0.6 + G.rng.next() * 0.4, 2.4 * k, 0.5, '#ff3a0a', 0.55, 0, 0.5);
       [px, pz] = at();
-      part(hot, px, y + 0.7, pz, rnd(0.6), 2.6 + Math.random() * 2.6, rnd(0.6), 0.5 + Math.random() * 0.35, 1.8 * k, 0.35, Math.random() < 0.5 ? '#ff7a1a' : '#ff9d2a', 0.9, 0, 0.5);
-      if (Math.random() < 0.7) {
+      part(hot, px, y + 0.7, pz, rnd(0.6), 2.6 + G.rng.next() * 2.6, rnd(0.6), 0.5 + G.rng.next() * 0.35, 1.8 * k, 0.35, G.rng.next() < 0.5 ? '#ff7a1a' : '#ff9d2a', 0.9, 0, 0.5);
+      if (G.rng.next() < 0.7) {
         [px, pz] = at();
-        part(hot, px, y + 0.9, pz, rnd(0.3), 3.4 + Math.random() * 2, rnd(0.3), 0.35 + Math.random() * 0.25, 1.1 * k, 0.2, Math.random() < 0.5 ? '#ffd75a' : '#fff2b0', 0.95, 0, 0.4);
+        part(hot, px, y + 0.9, pz, rnd(0.3), 3.4 + G.rng.next() * 2, rnd(0.3), 0.35 + G.rng.next() * 0.25, 1.1 * k, 0.2, G.rng.next() < 0.5 ? '#ffd75a' : '#fff2b0', 0.95, 0, 0.4);
       }
-      if (Math.random() < 0.55) part(soft, x + rnd(1.6), y + 1.6, z + rnd(1.6), 0.7 + rnd(0.6), 2.6 + Math.random() * 1.6, rnd(0.8), 2.6 + Math.random() * 1.6, 1.4 * k, 6.5 * k, Math.random() < 0.5 ? '#1c1a19' : '#4a4743', 0.62, 0.15, 0.35);
-      if (Math.random() < 0.2) part(hot, x + rnd(1.2), y + 1, z + rnd(1.6), rnd(5), 4 + Math.random() * 6, rnd(5), 0.7 + Math.random() * 0.6, 0.28, 0.08, '#ffb040', 1, -9, 0.3);
-      if (Math.random() < 0.25) part(hot, x, y + 1.2, z, 0, 0.3, 0, 0.5, 6 * k, 6 * k, '#ff6a1a', 0.18);
+      if (G.rng.next() < 0.55) part(soft, x + rnd(1.6), y + 1.6, z + rnd(1.6), 0.7 + rnd(0.6), 2.6 + G.rng.next() * 1.6, rnd(0.8), 2.6 + G.rng.next() * 1.6, 1.4 * k, 6.5 * k, G.rng.next() < 0.5 ? '#1c1a19' : '#4a4743', 0.62, 0.15, 0.35);
+      if (G.rng.next() < 0.2) part(hot, x + rnd(1.2), y + 1, z + rnd(1.6), rnd(5), 4 + G.rng.next() * 6, rnd(5), 0.7 + G.rng.next() * 0.6, 0.28, 0.08, '#ffb040', 1, -9, 0.3);
+      if (G.rng.next() < 0.25) part(hot, x, y + 1.2, z, 0, 0.3, 0, 0.5, 6 * k, 6 * k, '#ff6a1a', 0.18);
     },
     spark: (x, y, z, n = 6) => {
-      for (let i = 0; i < n; i += 1) part(hot, x, y, z, rnd(9), 2 + Math.random() * 5, rnd(9), 0.25 + Math.random() * 0.3, 0.35, 0.1, '#ffd470', 1, -16, 0.5);
+      for (let i = 0; i < n; i += 1) part(hot, x, y, z, rnd(9), 2 + G.rng.next() * 5, rnd(9), 0.25 + G.rng.next() * 0.3, 0.35, 0.1, '#ffd470', 1, -16, 0.5);
     },
     dust: (x, y, z, n = 6) => {
-      for (let i = 0; i < n; i += 1) part(soft, x + rnd(1.5), y, z + rnd(1.5), rnd(4), 0.8 + Math.random(), rnd(4), 0.9, 0.8, 3.2, '#b8a58a', 0.4, 0, 1.2);
+      for (let i = 0; i < n; i += 1) part(soft, x + rnd(1.5), y, z + rnd(1.5), rnd(4), 0.8 + G.rng.next(), rnd(4), 0.9, 0.8, 3.2, '#b8a58a', 0.4, 0, 1.2);
     },
     muzzle: (x, y, z, color) => {
       part(hot, x, y, z, 0, 0, 0, 0.07, 0.7, 1.1, color, 0.85);
@@ -158,11 +158,11 @@ export function createFx(G, glow) {
     },
     explosion: (x, y, z, size = 1) => {
       for (let i = 0; i < 34; i += 1) {
-        const a = Math.random() * 6.28;
-        const sp = (3 + Math.random() * 9) * size;
-        part(hot, x, y, z, Math.cos(a) * sp, 2 + Math.random() * 9 * size, Math.sin(a) * sp, 0.6 + Math.random() * 0.7, 3.2 * size, 0.6, Math.random() < 0.4 ? '#ff5a12' : '#ffb830', 0.95, -3, 1.4);
+        const a = G.rng.next() * 6.28;
+        const sp = (3 + G.rng.next() * 9) * size;
+        part(hot, x, y, z, Math.cos(a) * sp, 2 + G.rng.next() * 9 * size, Math.sin(a) * sp, 0.6 + G.rng.next() * 0.7, 3.2 * size, 0.6, G.rng.next() < 0.4 ? '#ff5a12' : '#ffb830', 0.95, -3, 1.4);
       }
-      for (let i = 0; i < 22; i += 1) part(soft, x + rnd(3), y + Math.random() * 2, z + rnd(3), rnd(5), 3 + Math.random() * 4, rnd(5), 2.4 + Math.random() * 1.6, 3 * size, 8 * size, '#22201e', 0.75, 0.3, 0.6);
+      for (let i = 0; i < 22; i += 1) part(soft, x + rnd(3), y + G.rng.next() * 2, z + rnd(3), rnd(5), 3 + G.rng.next() * 4, rnd(5), 2.4 + G.rng.next() * 1.6, 3 * size, 8 * size, '#22201e', 0.75, 0.3, 0.6);
       fx.spark(x, y, z, 30);
       const ball = new THREE.Sprite(new THREE.SpriteMaterial({ map: G.glowTex, color: '#ff9a3a', transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
       ball.position.set(x, y, z);
@@ -293,7 +293,7 @@ export function createCombat(G) {
     const list = targets(faction);
     const end = { x: 0, y: oy, z: 0 };
     for (let n = 0; n < weapon.pellets; n += 1) {
-      const a = dir + (Math.random() - 0.5) * 2 * weapon.spread;
+      const a = dir + (G.rng.next() - 0.5) * 2 * weapon.spread;
       const dx = Math.sin(a);
       const dz = Math.cos(a);
       let best = weapon.range;
@@ -355,12 +355,12 @@ export function createCombat(G) {
     if (e.hp <= 0) {
       e.dead = 0;
       C.spawnPickup(rng.chance(0.5) ? 'ammo' : 'cash', e.x, e.z, rng.int(20, 80));
-      if (byPlayer) G.missions.onKill(e);
+      if (byPlayer || e.mission) G.missions.onKill(e);
     }
   };
 
   C.spawnEnemy = (x, z, o = {}) => {
-    const mesh = createHumanoid({ shirt: '#3a1f52', pants: '#16131c', skin: rng.pick(['#e9b88f', '#b57a54', '#8a5a3a']), hair: '#0c0c10', hat: '#2a1740', gun: true, kind: 'thug' });
+    const mesh = createHumanoid({ shirt: '#3a1f52', pants: '#16131c', skin: rng.pick(['#e9b88f', '#b57a54', '#8a5a3a']), hair: '#0c0c10', hat: '#2a1740', gun: true, kind: 'thug', phase: rng.range(0, 6) });
     G.scene.add(mesh);
     const e = { mesh, x, z, hp: o.hp || 60, dir: rng.range(0, 6.28), cd: rng.range(0.4, 1.2), alert: o.alert || 0, dead: -1, strafe: rng.sign(), t: 0, mission: !!o.mission };
     C.enemies.push(e);
@@ -451,6 +451,7 @@ export function createCombat(G) {
       if (d < 1.9 || (G.player.inVehicle && d < 3.4) || p.life <= 0) {
         if (p.life > 0) G.player.collect(p);
         G.scene.remove(p.m);
+        for (const ch of p.m.children) if (ch.material) ch.material.dispose();
         p.m.material.dispose();
         C.pickups.splice(i, 1);
       }

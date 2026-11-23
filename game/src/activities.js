@@ -30,6 +30,13 @@ export function createActivities(G) {
   };
   const discount = () => 1 - 0.08 * Math.max(0, A.level('palma'));
 
+  A.garagePrices = (v) => ({
+    repair: Math.round(120 * discount()),
+    respray: Math.round(80 * discount()),
+    tune: !v || v.tune > 1.19 ? null : Math.round(400 * Math.round((v.tune - 1) / 0.07 + 1) * discount()),
+    clear: Math.round(500 * discount()),
+  });
+
   A.onLaunch = (v) => {
     if (v.driver === 'player') A.launch = { x: v.x, z: v.z };
   };
@@ -66,13 +73,16 @@ export function createActivities(G) {
       });
     } else if (input.take('Digit2')) {
       buy(80, () => {
-        const c = CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)];
+        const c = G.rng.pick(CAR_COLORS);
         v.parts.paint.color.set(c);
         return 'Resprayed';
       });
     } else if (input.take('Digit3')) {
+      if (v.tune > 1.19) {
+        A.garage.msg = 'Fully tuned';
+        return;
+      }
       buy(400 * Math.round((v.tune - 1) / 0.07 + 1), () => {
-        if (v.tune > 1.19) return 'Fully tuned';
         v.tune += 0.07;
         return `Tuned to level ${Math.round((v.tune - 1) / 0.07)}`;
       });

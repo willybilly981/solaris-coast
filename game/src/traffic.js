@@ -122,7 +122,7 @@ export function createTraffic(G) {
     T.spawnOnRoad(rng.pick(TRAFFIC_SPECS), axis, c, along, sign, rng.pick(CAR_COLORS));
   }
 
-  T.step = (dt) => {
+  T.step = () => {
     let count = 0;
     for (const v of G.vehicles.list) if (v.owner === 'traffic' && v.ai) count += 1;
     if (count < 34 && rng.chance(0.6)) spawnOne();

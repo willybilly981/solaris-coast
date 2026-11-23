@@ -48,6 +48,7 @@ export function createPlayer(G) {
 
   function respawn() {
     const s = LANDMARKS.safehouse;
+    if (P.inVehicle) P.exit(true);
     P.x = s.x;
     P.z = s.z + 4;
     P.heading = 0;
@@ -56,7 +57,6 @@ export function createPlayer(G) {
     P.wasted = false;
     G.police.clear();
     G.hud.banner('', '#fff');
-    if (P.inVehicle) P.exit(true);
     P.cash = Math.max(0, P.cash - 250);
   }
 
@@ -169,7 +169,7 @@ export function createPlayer(G) {
       return;
     }
     if (P.hp < 100 && !P.inVehicle) P.hp = Math.min(100, P.hp + dt * 0.3);
-    for (let i = 0; i < 5; i += 1) if (input.take(`Digit${i + 1}`)) selectWeapon(i);
+    if (!G.activities?.garage.open) for (let i = 0; i < 5; i += 1) if (input.take(`Digit${i + 1}`)) selectWeapon(i);
     if (input.take('KeyQ')) {
       selectWeapon((P.weapon + 1) % WEAPONS.length);
       P.wheelT = 1.6;
@@ -293,7 +293,6 @@ export function createPlayer(G) {
     P.y = 0.2;
     mesh.position.set(P.x, 0.2, P.z);
     mesh.rotation.y = P.heading;
-    const wpn = WEAPONS[P.weapon];
     mesh.userData.weapon.visible = P.weapon !== 0;
     P.aiming = input.mouse.left || input.down('Space') || P.weapon !== 0;
     animateHumanoid(mesh, speed, t, P.aiming && P.weapon !== 0);
@@ -301,7 +300,6 @@ export function createPlayer(G) {
       P.punchT -= dt;
       mesh.userData.armR.rotation.x = -1.4;
     }
-    return wpn;
   }
 
   return P;

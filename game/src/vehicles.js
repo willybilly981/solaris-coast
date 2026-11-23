@@ -60,7 +60,10 @@ function wheelMesh(r, w) {
   const geos = wheelGeos(r, w);
   const tire = new THREE.Mesh(geos.tire, SHARED.tire);
   tire.castShadow = true;
-  spin.add(tire, new THREE.Mesh(geos.rim, SHARED.rim));
+  const rim = new THREE.Mesh(geos.rim, SHARED.rim);
+  tire.userData.sharedGeo = true;
+  rim.userData.sharedGeo = true;
+  spin.add(tire, rim);
   g.add(spin);
   g.userData.spin = spin;
   return g;
@@ -262,8 +265,12 @@ export function createVehicles(G) {
 
   M.remove = (v) => {
     G.scene.remove(v.mesh);
+    const sharedMats = new Set(Object.values(SHARED));
+    if (liveryMat) sharedMats.add(liveryMat);
     v.mesh.traverse((o) => {
-      if (o.geometry) o.geometry.dispose();
+      if (o.geometry && !o.isSprite && !o.userData?.sharedGeo) o.geometry.dispose();
+      if (!o.material) return;
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (!sharedMats.has(m)) m.dispose();
     });
     const i = list.indexOf(v);
     if (i >= 0) list.splice(i, 1);
@@ -419,7 +426,7 @@ export function createVehicles(G) {
     v.z = Math.max(WORLD.minZ, Math.min(WORLD.maxZ, v.z));
   }
 
-  function collideVehicles(dt) {
+  function collideVehicles() {
     for (let i = 0; i < list.length; i += 1) {
       const a = list[i];
       for (let j = i + 1; j < list.length; j += 1) {
@@ -525,7 +532,7 @@ export function createVehicles(G) {
       stepVehicle(v, dt);
       if (idle) v.sleep = true;
     }
-    collideVehicles(dt);
+    collideVehicles();
     for (let i = list.length - 1; i >= 0; i -= 1) {
       const v = list[i];
       visuals(v, t, dt);

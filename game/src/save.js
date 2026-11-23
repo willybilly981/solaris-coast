@@ -3,14 +3,19 @@
 const KEY = 'solaris-coast.slot';
 const memory = {};
 
+const valid = (d) => Boolean(d && typeof d === 'object' && !Array.isArray(d) && Number.isFinite(d.cash) && Number.isFinite(d.missions));
+
 function read(i) {
   try {
     const raw = window.localStorage.getItem(`${KEY}${i}`);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const data = JSON.parse(raw);
+      return valid(data) ? data : null;
+    }
   } catch {
     // storage blocked or corrupt: use the in-memory copy
   }
-  return memory[i] || null;
+  return valid(memory[i]) ? memory[i] : null;
 }
 
 function write(i, data) {
@@ -41,13 +46,12 @@ export function createSave(G) {
     G.missions.reset(d.missions);
     G.activities.load(d.activities);
     (d.ammo || []).forEach((a, k) => {
-      if (G.player.weapons[k]) [G.player.weapons[k].mag, G.player.weapons[k].reserve] = a;
+      if (G.player.weapons[k] && Array.isArray(a) && Number.isFinite(a[0]) && Number.isFinite(a[1])) [G.player.weapons[k].mag, G.player.weapons[k].reserve] = a;
     });
     return true;
   };
   S.fresh = (i) => {
     S.slot = i;
-    write(i, null);
     memory[i] = null;
     try {
       window.localStorage.removeItem(`${KEY}${i}`);

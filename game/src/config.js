@@ -29,9 +29,7 @@ export const LANDMARKS = {
   safehouse: { x: -240, z: -45 },
   safehouseBuilding: { x: -240, z: -75 },
   depot: { x: 95, z: 105 },
-  pier: { x: 25, z: 244 },
   crownPlaza: { x: 20, z: -65 },
-  hotelBay: { x: 130, z: -150 },
   raceStart: { x: 130, z: 100 },
   beach: { x: 195, z: 40 },
 };
@@ -137,7 +135,7 @@ export const MISSIONS = [
     start: { x: -110, z: 20 },
     intro: [['Elena', 'Obsidian tipped the SCMPD. Disappear.']],
     steps: [
-      { type: 'evade', text: 'Lose the SCMPD', heat: 70, line: ['Mateo', 'Three stars. They really want me.'] },
+      { type: 'evade', text: 'Lose the SCMPD', line: ['Mateo', 'Three stars. They really want me.'] },
       { type: 'goto', text: 'Hide out at the safehouse', x: -240, z: -45, r: 6, line: ['Elena', 'Safehouse is clear. Come home.'] },
     ],
     outro: [['Elena', 'You vanished like a magician. Rest up.']],

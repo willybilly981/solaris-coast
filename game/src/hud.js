@@ -157,6 +157,13 @@ export function createHud(G) {
     }
   };
 
+  const setHtml = (key, node, html) => {
+    if (cache[key] !== html) {
+      cache[key] = html;
+      node.innerHTML = html;
+    }
+  };
+
   H.toast = (text) => {
     toastEl.textContent = text;
     toastEl.style.opacity = '1';
@@ -278,10 +285,19 @@ export function createHud(G) {
     g.fill();
     g.stroke();
     g.restore();
-    g.strokeStyle = 'rgba(255,255,255,.65)';
+    const na = yaw - Math.PI;
+    const nx = 105 + Math.sin(na) * 92;
+    const ny = 105 - Math.cos(na) * 92;
+    g.save();
     g.font = 'bold 13px Arial';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.lineWidth = 3;
+    g.strokeStyle = 'rgba(0,0,0,.85)';
+    g.strokeText('N', nx, ny);
     g.fillStyle = '#ffffff';
-    g.fillText('N', 100, 16);
+    g.fillText('N', nx, ny);
+    g.restore();
   }
 
   function drawFullMap() {
@@ -337,7 +353,12 @@ export function createHud(G) {
     [[-26, -7, 48, 13, 4], [-12, 5, 9, 13, 2], [22, -4, 11, 5, 2]],
   ];
 
-  function drawWheel() {
+  let wheelSig = '';
+
+  function drawWheel(mode) {
+    const sig = `${mode}|${G.player.weapon}|${G.player.weapons.map((w) => `${w.mag}/${w.reserve}`).join(',')}`;
+    if (sig === wheelSig) return;
+    wheelSig = sig;
     const g = wheel.getContext('2d');
     const S = 440;
     const C = S / 2;
@@ -425,7 +446,6 @@ export function createHud(G) {
     const pl = G.player;
     title.classList.toggle('hidden', mode !== 'title');
     pause.classList.toggle('hidden', mode !== 'paused');
-    const playing = mode === 'play' || mode === 'paused' || mode === 'shot';
     root.style.visibility = 'visible';
     for (const n of [topRight, topLeft, bottomLeft, center]) n.style.display = mode === 'title' ? 'none' : '';
     if (mode === 'title') {
@@ -455,8 +475,7 @@ export function createHud(G) {
     set('rt', respectText, `RESPECT LV ${lvl}   ${rv} pts`);
     const w = WEAPONS[pl.weapon];
     const ws = pl.weapons[pl.weapon];
-    set('weapon', weapon, '');
-    weapon.innerHTML = `${w.name.toUpperCase()}  <span>${pl.weapon === 0 ? '-' : `${ws.mag}`}</span> / ${pl.weapon === 0 ? '-' : ws.reserve}`;
+    setHtml('weapon', weapon, `${w.name.toUpperCase()}  <span>${pl.weapon === 0 ? '-' : `${ws.mag}`}</span> / ${pl.weapon === 0 ? '-' : ws.reserve}`);
     const info = G.missions.info();
     set('mt', missionTitle, `MISSION  ${Math.min(G.missions.done + 1, 8)}/8  ${info.title.toUpperCase()}`);
     set('mx', missionText, info.text);
@@ -479,7 +498,7 @@ export function createHud(G) {
     bottomRight.style.display = v ? '' : 'none';
     if (v) {
       set('veh', vehName, v.spec.name.toUpperCase());
-      speed.innerHTML = `${Math.round(Math.abs(v.speed) * 3.6)}<small> km/h</small>`;
+      setHtml('speed', speed, `${Math.round(Math.abs(v.speed) * 3.6)}<small> km/h</small>`);
       nitroBar.style.width = `${v.nitro * 100}%`;
       nitroWrap.style.display = v.spec.nitro ? '' : 'none';
       nitroLabel.style.display = v.spec.nitro ? '' : 'none';
@@ -489,10 +508,10 @@ export function createHud(G) {
     if (G.activities.garage.open) promptText = '';
     prompt.style.display = promptText ? '' : 'none';
     const m = /^\[(\w)\]\s*(.*)$/.exec(promptText);
-    prompt.innerHTML = m ? `<b>[${m[1]}]</b> ${m[2]}` : promptText;
+    setHtml('prompt', prompt, m ? `<b>[${m[1]}]</b> ${m[2]}` : promptText);
     const line = G.missions.lines[0];
     dialogue.style.display = line ? '' : 'none';
-    if (line) dialogue.innerHTML = `<b style="color:${line[0] === 'Elena' ? '#6fe8ff' : '#ffb06a'}">${line[0].toUpperCase()}</b>${line[1]}`;
+    if (line) setHtml('dialogue', dialogue, `<b style="color:${line[0] === 'Elena' ? '#6fe8ff' : '#ffb06a'}">${line[0].toUpperCase()}</b>${line[1]}`);
     toastT = Math.max(0, toastT - dt);
     if (toastT <= 0) toastEl.style.opacity = '0';
     bannerT = Math.max(0, bannerT - dt);
@@ -502,15 +521,15 @@ export function createHud(G) {
     if (race) raceBox.textContent = `${Math.max(0, race.time).toFixed(1)}s  CP ${race.idx + 1}/5`;
     set('stunt', stuntEl, G.activities.stuntBest ? `Best stunt jump ${G.activities.stuntBest} m` : '');
     wheel.style.opacity = pl.wheelT > 0 ? '1' : '0';
-    if (pl.wheelT > 0 || mode === 'shot') drawWheel();
+    if (pl.wheelT > 0 || mode === 'shot') drawWheel(mode);
     const ga = G.activities.garage;
     garage.classList.toggle('hidden', !ga.open);
     if (ga.open) {
-      garage.innerHTML = `<h2>CREW GARAGE</h2>1  Repair  $120<br>2  Respray  $80<br>3  Tune  engine +7%<br>4  Clear heat  $500<br><small>${ga.msg}  /  E close</small>`;
+      const gp = G.activities.garagePrices(pl.vehicle);
+      setHtml('garage', garage, `<h2>CREW GARAGE</h2>1  Repair  $${gp.repair}<br>2  Respray  $${gp.respray}<br>3  Tune  engine +7%  ${gp.tune === null ? 'MAX' : `$${gp.tune}`}<br>4  Clear heat  $${gp.clear}<br><small>${ga.msg}  /  E close</small>`);
     }
     full.classList.toggle('hidden', !G.mapOpen);
     if (G.mapOpen) drawFullMap();
-    if (!playing) return;
   };
 
   return H;

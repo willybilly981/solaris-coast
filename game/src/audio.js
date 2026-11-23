@@ -55,8 +55,9 @@ export function createAudio() {
     }
   }
 
-  function burst(dur, freq, gain, type = 'bandpass', q = 1) {
+  function burst(dur, freq, gain, type = 'bandpass', q = 1, time = null) {
     if (!ctx) return;
+    const t0 = time ?? ctx.currentTime;
     const src = ctx.createBufferSource();
     src.buffer = noiseBuf;
     const f = ctx.createBiquadFilter();
@@ -64,11 +65,11 @@ export function createAudio() {
     f.frequency.value = freq;
     f.Q.value = q;
     const g = ctx.createGain();
-    g.gain.setValueAtTime(gain, ctx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    g.gain.setValueAtTime(gain, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
     src.connect(f).connect(g).connect(master);
-    src.start();
-    src.stop(ctx.currentTime + dur + 0.05);
+    src.start(t0);
+    src.stop(t0 + dur + 0.05);
   }
 
   function tone(freq, time, dur, type, gain, dest = master) {
@@ -89,17 +90,17 @@ export function createAudio() {
       const arp = [57, 60, 64, 67, 69, 67, 64, 60];
       tone(midi(arp[i % 8] + (Math.floor(i / 16) % 2 ? 5 : 0)), t, s * 0.9, 'sawtooth', 0.06);
       if (i % 4 === 0) tone(midi(33), t, s * 3, 'triangle', 0.16);
-      if (i % 4 === 2) burst(0.06, 6000, 0.06, 'highpass');
+      if (i % 4 === 2) burst(0.06, 6000, 0.06, 'highpass', 1, t);
     },
     (i, t, s) => {
       if (i % 4 === 0) tone(60, t, 0.18, 'sine', 0.35);
-      if (i % 2 === 1) burst(0.05, 8000, 0.05, 'highpass');
-      if (i % 8 === 4) burst(0.14, 1800, 0.09);
+      if (i % 2 === 1) burst(0.05, 8000, 0.05, 'highpass', 1, t);
+      if (i % 8 === 4) burst(0.14, 1800, 0.09, 'bandpass', 1, t);
       tone(midi([45, 45, 48, 43][Math.floor(i / 4) % 4] + 12), t, s * 0.7, 'square', 0.035);
     },
     (i, t, s) => {
       if (i % 8 === 0) tone(midi(31), t, s * 5, 'sine', 0.3);
-      if (i % 8 === 4) burst(0.18, 900, 0.1);
+      if (i % 8 === 4) burst(0.18, 900, 0.1, 'bandpass', 1, t);
       if (i % 4 === 2) tone(midi(55 + (i % 16 > 8 ? 3 : 0)), t, s * 1.4, 'triangle', 0.05);
     },
   ];
@@ -169,6 +170,5 @@ export function createAudio() {
   A.pickup = () => ctx && tone(880, ctx.currentTime, 0.12, 'sine', 0.12);
   A.click = () => ctx && tone(520, ctx.currentTime, 0.05, 'square', 0.05);
   A.alert = () => ctx && tone(330, ctx.currentTime, 0.4, 'sawtooth', 0.07);
-  A.dispose = () => clearInterval(timer);
   return A;
 }

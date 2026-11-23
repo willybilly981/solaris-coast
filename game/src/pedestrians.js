@@ -102,7 +102,7 @@ const WEAPON_GEO = mergeGeos([
   box(0.05, 0.09, 0.16, 0, -0.01, -0.12, '#14161c'),
 ]).rotateX(Math.PI / 2);
 
-export function createHumanoid({ shirt = '#e85d75', pants = '#2b3a55', skin = '#d9a77b', hair = '#2a1a10', hat = null, gun = false, kind = 'civ' } = {}) {
+export function createHumanoid({ shirt = '#e85d75', pants = '#2b3a55', skin = '#d9a77b', hair = '#2a1a10', hat = null, gun = false, kind = 'civ', phase = 0 } = {}) {
   const o = { kind, shirt, pants, skin, hair, hat: hat || hair };
   const key = [kind, shirt, pants, skin, hair, hat].join('|');
   if (!cache.has(key)) cache.set(key, { body: bodyGeo(o), ...limbGeos(o) });
@@ -140,7 +140,7 @@ export function createHumanoid({ shirt = '#e85d75', pants = '#2b3a55', skin = '#
     this.matrixWorld.multiplyMatrices(flatShadow, flatTurn);
   };
   g.add(mesh(geo.body), shadow);
-  g.userData = { legL, legR, shinL, shinR, armL, armR, foreL, foreR, weapon, phase: Math.random() * 6 };
+  g.userData = { legL, legR, shinL, shinR, armL, armR, foreL, foreR, weapon, phase };
   return g;
 }
 
@@ -185,7 +185,7 @@ export function createPeds(G) {
   }
 
   P.spawnAt = (x, z, o = {}) => {
-    const mesh = createHumanoid({ shirt: rng.pick(SHIRTS), pants: rng.pick(PANTS), skin: rng.pick(SKINS), hair: rng.pick(['#2a1a10', '#111', '#8a5a2a', '#d9b44a']) });
+    const mesh = createHumanoid({ shirt: rng.pick(SHIRTS), pants: rng.pick(PANTS), skin: rng.pick(SKINS), hair: rng.pick(['#2a1a10', '#111', '#8a5a2a', '#d9b44a']), phase: rng.range(0, 6) });
     G.scene.add(mesh);
     const near = pickLine();
     const p = { mesh, x, z, axis: near.axis, line: near.line, dir: rng.sign(), speed: rng.range(1.3, 2.1), hp: 30, state: o.flee ? 'flee' : 'walk', fleeT: o.flee ? 6 : 0, dead: 0, lastC: null, cash: rng.int(8, 60), rot: 0 };
@@ -200,7 +200,7 @@ export function createPeds(G) {
     const ahead = rng.range(-70, 70);
     const x = q.axis === 'z' ? q.line : px + ahead;
     const z = q.axis === 'z' ? pz + ahead : q.line;
-    if (x < WORLD.minX || x > 134 || z < WORLD.minZ || z > WORLD.maxZ) return;
+    if (x < WORLD.minX || x > 144 || z < WORLD.minZ || z > WORLD.maxZ) return;
     if (Math.hypot(x - px, z - pz) < 25) return;
     const p = P.spawnAt(x, z);
     p.axis = q.axis;
@@ -275,7 +275,7 @@ export function createPeds(G) {
       p.x = next;
       p.z += (p.line - p.z) * Math.min(1, dt * 4);
     }
-    if (p.x < WORLD.minX + 2 || p.x > 134 || p.z < WORLD.minZ + 2 || p.z > WORLD.maxZ - 2) p.dir = -p.dir;
+    if (p.x < WORLD.minX + 2 || p.x > 144 || p.z < WORLD.minZ + 2 || p.z > WORLD.maxZ - 2) p.dir = -p.dir;
   }
 
   P.step = (dt, t) => {

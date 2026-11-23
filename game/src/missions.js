@@ -1,6 +1,6 @@
 // Story missions: glowing beacons, step tracking, Elena and Mateo radio lines, rewards.
 import * as THREE from 'three';
-import { DISTRICTS, MISSIONS, VEHICLES } from './config.js';
+import { DISTRICTS, MISSIONS } from './config.js';
 import { beamTexture } from './textures.js';
 
 export function makeBeacon(color) {
@@ -78,7 +78,7 @@ export function createMissions(G) {
       G.police.setStars(3);
       M.objective = { text: s.text, x: null, z: null };
     }
-    if (s.heat && s.type !== 'getcar') G.police.addHeat(s.heat);
+    if (s.heat && s.type !== 'getcar' && s.type !== 'evade') G.police.addHeat(s.heat);
     if (s.x !== undefined && s.type !== 'evade') setBeacon(objB, s.x, s.z, s.r || 3);
     else objB.visible = false;
   }
@@ -130,8 +130,11 @@ export function createMissions(G) {
     M.active = null;
     M.objective = null;
     objB.visible = false;
+    M.target = null;
     for (const e of M.spawned) {
-      if (e.mesh && e.hp !== undefined && !e.spec) e.hp = Math.min(e.hp, 0);
+      if (e.spec) {
+        if (e !== G.player.vehicle) G.vehicles.remove(e);
+      } else if (e.mesh && e.hp !== undefined) e.hp = Math.min(e.hp, 0);
     }
     M.spawned = [];
     showStart();
@@ -161,7 +164,7 @@ export function createMissions(G) {
   M.onEnterVehicle = (v) => {
     if (!M.active) return;
     const s = M.active.def.steps[M.step];
-    if (s.type === 'getcar' && v.specId === s.spec && Math.hypot(v.x - s.x, v.z - s.z) < 60) {
+    if (s.type === 'getcar' && (v === M.target || (v.specId === s.spec && Math.hypot(v.x - s.x, v.z - s.z) < 60))) {
       if (s.heat) G.police.addHeat(s.heat);
       finishStep();
     }
@@ -203,6 +206,11 @@ export function createMissions(G) {
       return;
     }
     const s = M.active.def.steps[M.step];
+    if (s.type === 'getcar' && M.target && M.target.dead) {
+      G.hud.banner('MISSION FAILED', '#ff3a4a', 'Target vehicle destroyed');
+      M.fail();
+      return;
+    }
     if (s.type === 'goto' && Math.hypot(pl.x - s.x, pl.z - s.z) < (s.r || 3) + 1) finishStep();
     else if (s.type === 'evade' && G.police.stars === 0 && !G.police.forced) finishStep();
     else if (s.type === 'destroy' && M.target && M.target.dead) finishStep();
@@ -219,11 +227,13 @@ export function createMissions(G) {
     }
     if (s.type === 'kill') {
       const alive = M.spawned.filter((e) => e.hp > 0 && e.mission);
-      if (alive.length) {
-        objB.position.set(alive[0].x, 0, alive[0].z);
-        M.objective.x = alive[0].x;
-        M.objective.z = alive[0].z;
+      if (!alive.length) {
+        finishStep();
+        return;
       }
+      objB.position.set(alive[0].x, 0, alive[0].z);
+      M.objective.x = alive[0].x;
+      M.objective.z = alive[0].z;
     }
   };
 
@@ -237,7 +247,6 @@ export function createMissions(G) {
     return { title: def.title, text: M.objective.text + extra, dist, x: M.objective.x, z: M.objective.z, district: def.district };
   };
 
-  M.vehicleName = (id) => VEHICLES[id].name;
   showStart();
   return M;
 }

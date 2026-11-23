@@ -21,7 +21,6 @@ export function createInput(canvas) {
   window.addEventListener('mousedown', (e) => {
     if (e.button === 0) mouse.left = true;
     if (e.button === 2) mouse.right = true;
-    edge.add(`Mouse${e.button}`);
   });
   window.addEventListener('mouseup', (e) => {
     if (e.button === 0) mouse.left = false;
